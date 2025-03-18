@@ -1,0 +1,13 @@
+[
+    {
+        "type": "heartbeat",
+        "name": "api-service",
+        "status": "ok",
+        "metrics": {
+            "coming-soon": "placeholder"
+        }
+    },
+    {
+        "db": "data.json as collection"
+    }
+]
