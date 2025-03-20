@@ -68,3 +68,49 @@ func FetchHeartbeat() (bson.M, error) {
 	}
 	return result, nil
 }
+
+// FindClientByUUID searches for a client in MongoDB by UUID
+func FindClientByUUID(uuid string) (*ClientAuth, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var client ClientAuth
+	err := ClientCollection.FindOne(ctx, bson.M{"ClientId": uuid}).Decode(&client)
+	if err != nil {
+		return nil, err
+	}
+
+	return &client, nil
+}
+
+// Fetch and clear commands for a given ClientId
+func FetchAndClearCommands(clientId string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Define a struct to hold just the Commands field
+	var result struct {
+		Commands []string `bson:"Commands"`
+	}
+
+	// Find the document and retrieve the Commands array
+	filter := bson.M{"ClientId": clientId}
+	err := ClientCollection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil // No commands found
+		}
+		log.Println("Error fetching commands:", err)
+		return nil, err
+	}
+
+	// Clear the commands array in MongoDB
+	update := bson.M{"$set": bson.M{"Commands": []string{}}}
+	_, err = ClientCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Println("Error clearing commands:", err)
+		return nil, err
+	}
+
+	return result.Commands, nil
+}

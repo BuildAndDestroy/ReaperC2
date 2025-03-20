@@ -5,7 +5,7 @@
 # Run a few api tests, then kill the server by running stop
 docker build -t mongoclient -f mongoclient.dockerfile .
 docker run --rm -it \
-    -n mongodb \
+    --name mongodb \
     -p 27017:27017 \
     -d mongodb/mongodb-community-server:latest
 docker run --rm -it mongoclient
