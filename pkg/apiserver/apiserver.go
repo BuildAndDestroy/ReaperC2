@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -21,72 +22,100 @@ const (
 	endpointStatus        = "/status"
 	endpointComingSoon    = "/coming-soon"
 	endpointData          = "/data"
-	endpointDataHeartbeat = "/heartbeat"
+	endpointUUID          = "/{uuid}"
+	endpointHeartbeat     = "/heartbeat"
+	endpointHeartbeatUUID = endpointHeartbeat + endpointUUID
 	endpointReceive       = "/receive"
+	endpointReceiveUUID   = endpointReceive + endpointUUID
 )
 
 // Start the API server
 func StartAPIServer() {
+
+	r := mux.NewRouter()
+
 	// Welcome message to know the API exists
-	http.HandleFunc(endpointRoot, func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc(endpointRoot, func(w http.ResponseWriter, r *http.Request) {
 		JsonResponse(w, map[string]string{"message": "Welcome"})
 	})
 
 	// Status check to make sure the API is running
-	http.HandleFunc(endpointStatus, func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc(endpointStatus, func(w http.ResponseWriter, r *http.Request) {
 		JsonResponse(w, map[string]string{"message": "API is running"})
 	})
 
 	// Redirector, use this to redirect unauthenticated clients
-	http.HandleFunc(endpointComingSoon, func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc(endpointComingSoon, func(w http.ResponseWriter, r *http.Request) {
 		JsonResponse(w, map[string]string{"message": "Coming soon..."})
 	})
 
-	// Protected endpoint (requires valid ClientId & Secret)
-	http.HandleFunc(endpointData, AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		// Debugging
-		// filePath := "data.json"
-		// file, err := os.Open(filePath)
-		// if err != nil {
-		// 	log.Fatalf("Error opening file: %v", err)
-		// }
-		// defer file.Close()
-		// log.Println("File opened successfully!")
+	// Authenticated endpoints
+	r.HandleFunc(endpointHeartbeat, AuthMiddleware(HandleHeartBeat))
+	r.HandleFunc(endpointHeartbeatUUID, AuthMiddleware(HandleHeartBeatUUID))
+	r.HandleFunc(endpointReceive, AuthMiddleware(HandleReceive))
+	// http.HandleFunc(endpointReceiveUUID, AuthMiddleware(HandleReceiveUUID))
 
-		data, err := LoadJSONFromFile("data.json")
-		if err != nil {
-			// log.Println("data.json should be here")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		JsonResponse(w, data)
-	}))
-
-	http.HandleFunc(endpointDataHeartbeat, AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		result, err := dbconnections.FetchHeartbeat()
-		if err != nil {
-			log.Println("Error fetching heartbeat:", err)
-			http.Error(w, `{"error": "Failed to fetch heartbeat"}`, http.StatusInternalServerError)
-			return
-		}
-
-		// Extract only the "status" field
-		status, ok := result["status"].(string)
-		// status, ok := result["command"].(string)
-		if !ok {
-			http.Error(w, "Invalid data format", http.StatusInternalServerError)
-			return
-		}
-
-		JsonResponse(w, map[string]string{"status": status})
-		// JsonResponse(w, map[string]string{"command": status})
-		// JsonResponse(w, []map[string]string{{"command": status}})
-	}))
-
-	http.HandleFunc(endpointReceive, AuthMiddleware(HandleReceive))
+	// Not used, but leaving here if I ever need to host a data.json file
+	// r.HandleFunc(endpointData, AuthMiddleware(HandleImportDataFile))
 
 	log.Println("Server running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8080", r))
+}
+
+func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
+	result, err := dbconnections.FetchHeartbeat()
+	if err != nil {
+		log.Println("Error fetching heartbeat:", err)
+		http.Error(w, `{"error": "Failed to fetch heartbeat"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Extract only the "status" field
+	status, ok := result["status"].(string)
+	// status, ok := result["command"].(string)
+	if !ok {
+		http.Error(w, "Invalid data format", http.StatusInternalServerError)
+		return
+	}
+
+	JsonResponse(w, map[string]string{"status": status})
+	// JsonResponse(w, map[string]string{"command": status})
+	// JsonResponse(w, []map[string]string{{"command": status}})
+}
+
+func HandleHeartBeatUUID(w http.ResponseWriter, r *http.Request) {
+	// Ensure it's a GET request
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	uuid := vars["uuid"]
+
+	client, err := dbconnections.FindClientByUUID(uuid)
+	if err != nil {
+		http.Error(w, "Client not found", http.StatusNotFound)
+		return
+	}
+
+	// Fetch and clear commands
+	commands, err := dbconnections.FetchAndClearCommands(uuid)
+	if err != nil {
+		http.Error(w, "Failed to retrieve commands", http.StatusInternalServerError)
+		return
+	}
+
+	// Prepare response
+	response := map[string]interface{}{
+		"ClientId": client.ClientId,
+		"Active":   client.Active,
+		"Commands": commands,
+	}
+
+	// Convert client struct to JSON and send response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // HandleReceive processes incoming POST data and logs it
@@ -123,6 +152,11 @@ func HandleReceive(w http.ResponseWriter, r *http.Request) {
 	// Send response
 	JsonResponse(w, map[string]string{"message": "Data received successfully"})
 }
+
+// // Authenticated endpointReceiveUUID POST details
+// func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
+
+// }
 
 // jsonResponse sends JSON data with the appropriate headers
 func JsonResponse(w http.ResponseWriter, data interface{}) {
@@ -197,3 +231,23 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		next.ServeHTTP(w, r) // Call the next handler
 	}
 }
+
+// // Import the data.json file and give to client
+// func HandleImportDataFile(w http.ResponseWriter, r *http.Request) {
+// 	// Debugging
+// 	// filePath := "data.json"
+// 	// file, err := os.Open(filePath)
+// 	// if err != nil {
+// 	// 	log.Fatalf("Error opening file: %v", err)
+// 	// }
+// 	// defer file.Close()
+// 	// log.Println("File opened successfully!")
+
+// 	data, err := LoadJSONFromFile("data.json")
+// 	if err != nil {
+// 		// log.Println("data.json should be here")
+// 		http.Error(w, err.Error(), http.StatusInternalServerError)
+// 		return
+// 	}
+// 	JsonResponse(w, data)
+// }

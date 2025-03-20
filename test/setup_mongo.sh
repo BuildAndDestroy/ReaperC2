@@ -15,10 +15,10 @@ use $DB_NAME;
 db.createCollection("$COLLECTION_CLIENTS");
 db.$COLLECTION_CLIENTS.createIndex({ "ClientId": 1 }, { unique: true });
 db.$COLLECTION_CLIENTS.createIndex({ "Secret": 1 });
-db.$COLLECTION_CLIENTS.insertMany([
-    { "ClientId": "550e8400-e29b-41d4-a716-446655440000", "Secret": "mysecurekey1", "Active": true, "Connection_Type": "HTTP" },
-    { "ClientId": "660e9400-e29b-41d4-a716-556655440111", "Secret": "mysecurekey2", "Active": false, "Connection_Type": "TCP" }
+db.$COLLECTION_CLIENTS.insertMany([{"ClientId": "550e8400-e29b-41d4-a716-446655440000", "Secret": "mysecurekey1", "Active": true, "Connection_Type": "HTTP","Commands": ["ls -la", "whoami", "uptime"]},
+{"ClientId": "660e9400-e29b-41d4-a716-556655440111", "Secret": "mysecurekey2", "Active": false, "Connection_Type": "TCP","Commands": []}
 ]);
+
 
 db.createCollection("$COLLECTION_HEARTBEAT");
 db.$COLLECTION_HEARTBEAT.insertOne({ "status": "ok" });
