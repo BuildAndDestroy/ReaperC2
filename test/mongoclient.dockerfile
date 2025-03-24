@@ -7,5 +7,6 @@ RUN apt update -y
 RUN apt-get install -y mongodb-mongosh mongodb-org-tools
 RUN mongosh --version
 COPY setup_mongo.sh /root/
+COPY data.json /root/
 WORKDIR "/root/"
 CMD [ "./setup_mongo.sh" ]

@@ -24,6 +24,7 @@ const (
 	databaseName        = "api_db"
 	collectionClients   = "clients"
 	collectionHeartbeat = "heartbeat"
+	collectionData      = "data"
 )
 
 // MongoDB client
@@ -32,6 +33,7 @@ var Client *mongo.Client
 // Collection references
 var ClientCollection *mongo.Collection
 var HeartbeatCollection *mongo.Collection
+var DataCollection *mongo.Collection
 
 // Connect to MongoDB
 func InitMongoDB() {
@@ -52,6 +54,7 @@ func InitMongoDB() {
 	db := Client.Database(databaseName)
 	ClientCollection = db.Collection(collectionClients)
 	HeartbeatCollection = db.Collection(collectionHeartbeat)
+	DataCollection = db.Collection(collectionData)
 	log.Println("Connected to MongoDB!")
 }
 
@@ -113,4 +116,22 @@ func FetchAndClearCommands(clientId string) ([]string, error) {
 	}
 
 	return result.Commands, nil
+}
+
+func FetchClientData(clientId string) ([]bson.M, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var results []bson.M
+	cursor, err := DataCollection.Find(ctx, bson.M{"ClientId": clientId})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
