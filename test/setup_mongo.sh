@@ -31,8 +31,8 @@ db.createCollection("data");
 db.data.createIndex({ "ClientId": 1 });
 
 db.data.insertMany([
-    { "ClientId": "550e8400-e29b-41d4-a716-446655440000", "info": "Sample data for client 1", "whoami": "" },
-    { "ClientId": "660e9400-e29b-41d4-a716-556655440111", "info": "Sample data for client 2", "whoami": "" }
+    { "ClientId": "550e8400-e29b-41d4-a716-446655440000", "info": "Sample data for client 1", "user": "", groups: "", "hostname": "", "ip_address": "", "groups": [] },
+    { "ClientId": "660e9400-e29b-41d4-a716-556655440111", "info": "Sample data for client 2", "user": "", groups: "", "hostname": "", "ip_address": "", "groups": [] }
 ]);
 EOF
 
