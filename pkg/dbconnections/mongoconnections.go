@@ -20,8 +20,10 @@ type ClientAuth struct {
 
 // MongoDB connection details
 const (
-	mongoURI            = "mongodb://172.17.0.2:27017"
+	mongoApiUsername    = "api_user"
+	mongoApiPassword    = "api_mongoApiPassword"
 	databaseName        = "api_db"
+	mongoURI            = "mongodb://" + mongoApiUsername + ":" + mongoApiPassword + "@172.17.0.2:27017/" + databaseName
 	collectionClients   = "clients"
 	collectionHeartbeat = "heartbeat"
 	collectionData      = "data"
