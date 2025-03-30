@@ -137,3 +137,22 @@ func FetchClientData(clientId string) ([]bson.M, error) {
 
 	return results, nil
 }
+
+// StoreClientData saves received command output in the "data" collection
+func StoreClientData(clientUUID, command, output string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	dataEntry := bson.M{
+		"ClientId":  clientUUID,
+		"Command":   command,
+		"Output":    output,
+		"Timestamp": time.Now(),
+	}
+
+	_, err := DataCollection.InsertOne(ctx, dataEntry)
+	if err != nil {
+		return err
+	}
+	return nil
+}
