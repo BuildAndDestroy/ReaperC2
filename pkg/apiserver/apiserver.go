@@ -206,7 +206,15 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[+] Received response from %s | Command: %s | Output: %s", clientUUID, requestData.Command, requestData.Output)
 
+	err = dbconnections.StoreClientData(clientUUID, requestData.Command, requestData.Output)
+	if err != nil {
+		log.Printf("[-] Failed to store data for %s: %v", clientUUID, err)
+		http.Error(w, "Failed to store data", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
+	JsonResponse(w, map[string]string{"message": "Data received and stored successfully"})
 }
 
 // jsonResponse sends JSON data with the appropriate headers

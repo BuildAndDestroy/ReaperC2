@@ -22,8 +22,23 @@ use $DB_API_NAME;
 db.createCollection("$COLLECTION_CLIENTS");
 db.$COLLECTION_CLIENTS.createIndex({ "ClientId": 1 }, { unique: true });
 db.$COLLECTION_CLIENTS.createIndex({ "Secret": 1 });
-db.$COLLECTION_CLIENTS.insertMany([{"ClientId": "550e8400-e29b-41d4-a716-446655440000", "Secret": "mysecurekey1", "ExpectedHeartBeat": "5s", "Active": true, "Connection_Type": "HTTP","Commands": ["ls -la", "whoami", "uptime", "date"]},
-{"ClientId": "660e9400-e29b-41d4-a716-556655440111", "Secret": "mysecurekey2", "ExpectedHeartBeat": "30s", "Active": false, "Connection_Type": "TCP","Commands": []}
+db.$COLLECTION_CLIENTS.insertMany([
+    {
+        "ClientId": "550e8400-e29b-41d4-a716-446655440000",
+        "Secret": "mysecurekey1",
+        "ExpectedHeartBeat": "5s",
+        "Active": true,
+        "Connection_Type": "HTTP",
+        "Commands": ["ls -la", "whoami", "uptime", "date"]
+    },
+    {
+        "ClientId": "660e9400-e29b-41d4-a716-556655440111",
+        "Secret": "mysecurekey2",
+        "ExpectedHeartBeat": "30s",
+        "Active": false,
+        "Connection_Type": "TCP",
+        "Commands": []
+    }
 ]);
 
 
@@ -32,11 +47,30 @@ db.$COLLECTION_HEARTBEAT.insertOne({ "status": "ok" });
 
 
 db.createCollection("$DB_DATA_COLLECTION");
+
 db.$DB_DATA_COLLECTION.createIndex({ "ClientId": 1 });
 
 db.$DB_DATA_COLLECTION.insertMany([
-    { "ClientId": "550e8400-e29b-41d4-a716-446655440000", "info": "Sample data for client 1", "user": "", groups: "", "hostname": "", "ip_address": "", "groups": [] },
-    { "ClientId": "660e9400-e29b-41d4-a716-556655440111", "info": "Sample data for client 2", "user": "", groups: "", "hostname": "", "ip_address": "", "groups": [] }
+    {
+        "ClientId": "550e8400-e29b-41d4-a716-446655440000",
+        "info": "Sample data for client 1",
+        "user": "",
+        groups: "",
+        "hostname": "",
+        "ip_address": "",
+        "groups": [],
+        "createdAt": new Date()
+    },
+    {
+        "ClientId": "660e9400-e29b-41d4-a716-556655440111",
+        "info": "Sample data for client 2",
+        "user": "",
+        groups: "",
+        "hostname": "",
+        "ip_address": "",
+        "groups": [],
+        "createdAt": new Date()
+    }
 ]);
 EOF
 
