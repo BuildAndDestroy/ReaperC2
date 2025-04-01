@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reaperc2-ns
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reaperc2-myregistrykey
+  namespace: reaperc2-ns
+data:
+  .dockerconfigjson: {cat ~/.docker/config.json | base64}
+type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reaperc2-mongodb-secrets
+  namespace: reaperc2-ns
+type: Opaque
+data:
+  admin-user-secret: {echo -n "adminUsername" | base64}
+  admin-password-secret: {echo -n "adminPassword" | base64}
+  api_db-user-secret: {echo -n "apiUser" | base64}
+  api_dp-user-password-secret: {echo -n "apiUserPassword" | base64}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: reaperc2-ns
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv
+  namespace: reaperc2-ns
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany  # RWX allows multiple pods to mount
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    path: /volume1/data
+    server: 192.168.1.100
+  mountOptions:
+    - nfsvers=4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+  namespace: reaperc2-ns
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-deployment
+  namespace: reaperc2-ns
+  labels:
+    app: mongodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongodb/mongodb-community-server:latest
+          # args: ["--dbpath","/data/mongodb"]
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-storage-deployment
+              mountPath: /data
+          env:
+            - name: MONGODB_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: admin-user-secret
+            - name: MONGODB_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: admin-password-secret
+            - name: MONGO_API_USER
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: api_db-user-secret
+            - name: MONGO_API_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: api_dp-user-password-secret
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "echo 'Waiting for MongoDB to be ready...';until mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1; do sleep 2; done;echo 'Creating API user...';mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db = db.getSiblingDB(\"api_db\");db.createUser({ user: \"'$MONGO_API_USER'\", pwd: \"'$MONGO_API_PASS'\", roles: [{ role: \"readWrite\", db: \"api_db\" }] });';"]
+      volumes:
+        - name: mongo-storage-deployment
+          persistentVolumeClaim:
+            claimName: mongo-pvc
+      imagePullSecrets:
+      - name: reaperc2-myregistrykey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reaperc2-deployment
+  namespace: reaperc2-ns
+  labels:
+    app: reaperc2-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reaperc2-deployment
+  template:
+    metadata:
+      labels:
+        app: reaperc2-deployment
+    spec:
+      containers:
+        - name: reaperc2-deployment
+          image: registry.reaper-ut.com/reaperc2:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+      imagePullSecrets:
+      - name: reaperc2-myregistrykey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reaperc2-service
+  namespace: reaperc2-ns
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: reaperc2-deployment
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reaperc2-ingress
+  namespace: reaperc2-ns
+  annotations:
+    #kubernetes.io/ingress.class: "traefik"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    traefik.ingress.kubernetes.io/frontend-entry-points: http, https
+    traefik.ingress.kubernetes.io/redirect-entry-point: https
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: yoursubdomain.yourrootdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: reaperc2-service
+            port:
+              number: 8080
+  - host: yoursubdomain.yourrootdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: reaperc2-service
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - yoursubdomain.yourrootdomain.com
+    secretName: c2-reaperc2-com-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: reaperc2-ingressroute
+  namespace: reaperc2-ns
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`yoursubdomain.yourrootdomain.com`)
+      kind: Rule
+      services:
+        - name: reaperc2-service
+          port: 8080
+  tls:
+    certResolver: letsencrypt
