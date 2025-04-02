@@ -24,7 +24,7 @@ const (
 	mongoApiPassword = "api_mongoApiPassword"
 	databaseName     = "api_db"
 	mongoFqdn        = "mongodb-service.reaperc2-ns.svc.cluster.local"
-	// mongoFqdn        = "172.17.0.2"
+	// mongoFqdn           = "172.17.0.2"
 	mongoURI            = "mongodb://" + mongoApiUsername + ":" + mongoApiPassword + "@" + mongoFqdn + ":27017/" + databaseName
 	collectionClients   = "clients"
 	collectionHeartbeat = "heartbeat"

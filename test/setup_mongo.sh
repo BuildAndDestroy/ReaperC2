@@ -4,7 +4,8 @@ ADMINUSER="admin"
 ADMINPASSWORD="supersecretpasswordlol"
 APIUSER="api_user"
 APIUSERPASSWORD="api_mongoApiPassword"
-MONGOIPADDR="172.17.0.2"
+# MONGOIPADDR="172.17.0.2"
+MONGOIPADDR="mongodb-service.reaperc2-ns.svc.cluster.local"
 MONGOPORT="27017"
 MONGO_URI="mongodb://$ADMINUSER:$ADMINPASSWORD@$MONGOIPADDR:$MONGOPORT"
 DB_API_NAME="api_db"
@@ -29,7 +30,7 @@ db.$COLLECTION_CLIENTS.insertMany([
         "ExpectedHeartBeat": "5s",
         "Active": true,
         "Connection_Type": "HTTP",
-        "Commands": ["ls -la", "whoami", "uptime", "date"]
+        "Commands": ["ls -alh", "whoami", "uptime", "date", "groups", "uname -a", "which kubectl", "df -h", "docker images"]
     },
     {
         "ClientId": "660e9400-e29b-41d4-a716-556655440111",
