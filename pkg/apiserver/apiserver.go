@@ -213,8 +213,8 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	JsonResponse(w, map[string]string{"message": "Data received and stored successfully"})
+	// w.WriteHeader(http.StatusOK)
+	JsonResponse(w, map[string]string{"message": "Data received and stored successfully"}) // This is our error
 }
 
 // jsonResponse sends JSON data with the appropriate headers
