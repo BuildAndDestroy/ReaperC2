@@ -37,19 +37,13 @@ func StartAPIServer() {
 	r := mux.NewRouter()
 
 	// Welcome message to know the API exists
-	r.HandleFunc(endpointRoot, func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, map[string]string{"message": "Welcome"})
-	})
+	r.HandleFunc(endpointRoot, HandleRootResponse)
 
 	// Status check to make sure the API is running
-	r.HandleFunc(endpointStatus, func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, map[string]string{"message": "API is running"})
-	})
+	r.HandleFunc(endpointStatus, HandleStatusResponse)
 
 	// Redirector, use this to redirect unauthenticated clients
-	r.HandleFunc(endpointComingSoon, func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, map[string]string{"message": "Coming soon..."})
-	})
+	r.HandleFunc(endpointComingSoon, HandleComingSoonResponse)
 
 	// Authenticated endpoints
 	// r.HandleFunc(endpointRegister, AuthMiddleware(HandleClientRegistration))
@@ -79,6 +73,27 @@ func StartAPIServer() {
 
 // 	log.Printf("[+] New client registered: %s", clientUUID)
 // }
+
+// Provide the root response
+func HandleRootResponse(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
+	JsonResponse(w, map[string]string{"message": "Welcome"})
+}
+
+// Provide API response
+func HandleStatusResponse(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
+	JsonResponse(w, map[string]string{"message": "API is running"})
+}
+
+// Provide a coming soon response
+func HandleComingSoonResponse(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
+	JsonResponse(w, map[string]string{"message": "Coming soon..."})
+}
 
 func HandleFetchData(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -264,7 +279,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		clientSecret := r.Header.Get("X-API-Secret")
 
 		clientIP := r.RemoteAddr
-		requestTime := time.Now().Format(time.RFC3339) // Logs timestamp in ISO format
+		// requestTime := time.Now().Format(time.RFC3339) // Logs timestamp in ISO format
 
 		// Extract real IP if behind a reverse proxy
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
@@ -272,7 +287,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Log the request details
-		log.Printf("[%s] Request from %s | Endpoint: %s\n", requestTime, clientIP, r.URL.Path)
+		log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
 
 		if clientSecret == "" {
 			http.Redirect(w, r, endpointComingSoon, http.StatusTemporaryRedirect)
@@ -281,7 +296,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		valid, err := ValidateClientAuth(clientSecret)
 		if err != nil || !valid {
-			log.Printf("[%s] Unauthorized request from %s\n", requestTime, clientIP)
+			log.Printf("Unauthorized request from %s\n", clientIP)
 			http.Redirect(w, r, endpointComingSoon, http.StatusTemporaryRedirect)
 			return
 		}
