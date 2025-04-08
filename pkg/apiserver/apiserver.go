@@ -57,6 +57,9 @@ func StartAPIServer() {
 	// Not used, but leaving here if I ever need to host a data.json file
 	// r.HandleFunc(endpointData, AuthMiddleware(HandleImportDataFile))
 
+	// // 404 fallback
+	r.NotFoundHandler = http.HandlerFunc(HandleFourOhFour)
+
 	log.Println("Server running on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
@@ -76,23 +79,20 @@ func StartAPIServer() {
 
 // Provide the root response
 func HandleRootResponse(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.RemoteAddr
-	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
-	JsonResponse(w, map[string]string{"message": "Welcome"})
+	log.Printf("Request from %s | Endpoint: %s\n", r.RemoteAddr, r.URL.Path)
+	JsonResponse(w, http.StatusOK, map[string]string{"message": "Welcome"})
 }
 
 // Provide API response
 func HandleStatusResponse(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.RemoteAddr
-	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
-	JsonResponse(w, map[string]string{"message": "API is running"})
+	log.Printf("Request from %s | Endpoint: %s\n", r.RemoteAddr, r.URL.Path)
+	JsonResponse(w, http.StatusOK, map[string]string{"message": "API is running"})
 }
 
 // Provide a coming soon response
 func HandleComingSoonResponse(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.RemoteAddr
-	log.Printf("Request from %s | Endpoint: %s\n", clientIP, r.URL.Path)
-	JsonResponse(w, map[string]string{"message": "Coming soon..."})
+	log.Printf("Request from %s | Endpoint: %s\n", r.RemoteAddr, r.URL.Path)
+	JsonResponse(w, http.StatusOK, map[string]string{"message": "Coming soon..."})
 }
 
 func HandleFetchData(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func HandleFetchData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JsonResponse(w, data)
+	JsonResponse(w, http.StatusOK, data)
 }
 
 func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +123,7 @@ func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JsonResponse(w, map[string]string{"status": status})
+	JsonResponse(w, http.StatusOK, map[string]string{"status": status})
 }
 
 // Hearbeat specific to a UUID beacon
@@ -194,7 +194,7 @@ func HandleReceive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send response
-	JsonResponse(w, map[string]string{"message": "Data received successfully"})
+	JsonResponse(w, http.StatusOK, map[string]string{"message": "Data received successfully"})
 }
 
 // Authenticated endpointReceiveUUID POST details
@@ -228,13 +228,24 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JsonResponse(w, map[string]string{"message": "Data received and stored successfully"})
+	JsonResponse(w, http.StatusOK, map[string]string{"message": "Data received and stored successfully"})
+}
+
+// 404 handler
+func HandleFourOhFour(w http.ResponseWriter, r *http.Request) {
+	// 404 fallback
+	log.Printf("Request from %s | Endpoint: %s | Method: %s | 404 Not Found\n", r.RemoteAddr, r.URL.Path, r.Method)
+	JsonResponse(w, http.StatusNotFound, map[string]string{
+		"error":   "Not Found",
+		"message": "Endpoint not found.",
+	})
 }
 
 // jsonResponse sends JSON data with the appropriate headers
-func JsonResponse(w http.ResponseWriter, data interface{}) {
+func JsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	// w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)
 }
 
