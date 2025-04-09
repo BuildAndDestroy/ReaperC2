@@ -101,7 +101,7 @@ spec:
             - containerPort: 27017
           volumeMounts:
             - name: mongo-storage-deployment
-              mountPath: /data
+              mountPath: /data/db
           env:
             - name: MONGODB_INITDB_ROOT_USERNAME
               valueFrom:
@@ -123,10 +123,11 @@ spec:
                 secretKeyRef:
                   name: reaperc2-mongodb-secrets
                   key: api_dp-user-password-secret
-          lifecycle:
-            postStart:
-              exec:
-                command: ["/bin/sh", "-c", "echo 'Waiting for MongoDB to be ready...';until mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1; do sleep 2; done;echo 'Creating API user...';mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db = db.getSiblingDB(\"api_db\");db.createUser({ user: \"'$MONGO_API_USER'\", pwd: \"'$MONGO_API_PASS'\", roles: [{ role: \"readWrite\", db: \"api_db\" }] });';"]
+          # This block may be removed if the setup script does all of this already.
+          # lifecycle:
+          #   postStart:
+          #     exec:
+          #       command: ["/bin/sh", "-c", "echo 'Waiting for MongoDB to be ready...';until mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1; do sleep 2; done;echo 'Creating API user...';mongosh -u \"$MONGODB_INITDB_ROOT_USERNAME\" -p \"$MONGODB_INITDB_ROOT_PASSWORD\" --authenticationDatabase \"admin\" --eval 'db = db.getSiblingDB(\"api_db\");db.createUser({ user: \"'$MONGO_API_USER'\", pwd: \"'$MONGO_API_PASS'\", roles: [{ role: \"readWrite\", db: \"api_db\" }] });';"]
       volumes:
         - name: mongo-storage-deployment
           persistentVolumeClaim:
