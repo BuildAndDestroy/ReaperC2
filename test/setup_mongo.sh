@@ -38,7 +38,32 @@ db.$COLLECTION_CLIENTS.insertMany([
         "ExpectedHeartBeat": "30s",
         "Active": false,
         "Connection_Type": "TCP",
+        "Pivot Server": "",
         "Commands": []
+    },
+    {
+        "ClientId": "17b7c8aa-a781-41c7-93d8-96a3f37c97ce",
+        "Secret": "mysecurekey3",
+        "ExpectedHeartBeat": "5s",
+        "Active": true,
+        "Connection_Type": "HTTP",
+        "Commands": ["ls -alh", "whoami", "uptime", "date", "groups", "uname -a", "which kubectl", "df -h", "docker images"]
+    },
+    {
+        "ClientId": "3187f868-1daf-4713-b91d-40cbed639b6e",
+        "Secret": "mysecurekey4",
+        "ExpectedHeartBeat": "10s",
+        "Active": true,
+        "Connection_Type": "HTTP",
+        "Commands": ["dir", "whoami /all", "(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime", "date", "net user", "net user /domain", "net localgroup"]
+    },
+    {
+        "ClientId": "f51fceaf-67b7-4428-9a6f-f7dba90f9f2b",
+        "Secret": "mysecurekey5",
+        "ExpectedHeartBeat": "5s",
+        "Active": true,
+        "Connection_Type": "HTTP",
+        "Commands": ["dir", "whoami /all", "date", "net user", "net localgroup"]
     }
 ]);
 
