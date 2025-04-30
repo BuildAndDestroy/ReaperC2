@@ -20,12 +20,16 @@ type ClientAuth struct {
 
 // MongoDB connection details
 const (
-	mongoApiUsername = "api_user"
-	mongoApiPassword = "api_mongoApiPassword"
-	databaseName     = "api_db"
-	mongoFqdn        = "mongodb-service.reaperc2-ns.svc.cluster.local"
-	// mongoFqdn           = "172.17.0.2"
-	mongoURI            = "mongodb://" + mongoApiUsername + ":" + mongoApiPassword + "@" + mongoFqdn + ":27017/" + databaseName
+	mongoApiUsername    = "api_user"
+	mongoApiPassword    = "api_mongoApiPassword"
+	databaseName        = "api_db"
+	mongoFqdn           = "mongodb-service.reaperc2-ns.svc.cluster.local"
+	mongoPort           = "27017"
+	mongoDockerFqdn     = "172.17.0.2"
+	MongoURI            = "mongodb://" + mongoApiUsername + ":" + mongoApiPassword + "@" + mongoFqdn + ":" + mongoPort + "/" + databaseName
+	documentDBFQDN      = "test-cluster.cluster-XXXXXXXX.us-east-1.docdb.amazonaws.com"
+	documentDBConString = "?ssl=true&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+	DocumentDBURI       = "mongodb://" + mongoApiUsername + ":" + mongoApiPassword + "@" + documentDBFQDN + ":" + mongoPort + "/" + documentDBConString
 	collectionClients   = "clients"
 	collectionHeartbeat = "heartbeat"
 	collectionData      = "data"
@@ -39,11 +43,11 @@ var ClientCollection *mongo.Collection
 var HeartbeatCollection *mongo.Collection
 var DataCollection *mongo.Collection
 
-// Connect to MongoDB
-func InitMongoDB() {
+// Connect to database for the correct environment
+func InitMongoDB(dbForEnv string) {
 	var err error
 	// Set MongoDB connection options
-	Client, err = mongo.Connect(context.TODO(), options.Client().ApplyURI(mongoURI))
+	Client, err = mongo.Connect(context.TODO(), options.Client().ApplyURI(dbForEnv))
 	if err != nil {
 		log.Fatal("MongoDB Connection Error:", err)
 	}

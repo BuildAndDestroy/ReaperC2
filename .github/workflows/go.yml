@@ -22,4 +22,4 @@ jobs:
         go-version: '1.23'
 
     - name: Build ReaperC2
-      run: cd cmd/ && env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o ReaperC2
+      run: cd cmd/ && env DEPLOY_ENV=ONPREM GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o ReaperC2

@@ -1,0 +1,11 @@
+# Terraform
+*tfplan
+*terraform.tfstate.backup
+*terraform.tfstate
+
+# eksctl
+*01-create-cluster.yaml
+*02-x86-64-create-nodegroup.yaml
+
+# DocumentDB CA file
+*rds-combined-ca-bundle.pem

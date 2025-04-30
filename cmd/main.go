@@ -13,13 +13,14 @@ func main() {
 	deployEnv := deploymehere.GetDeploymentEnv()
 	switch deployEnv {
 	case "AWS":
-		log.Println("AWS: Coming soon")
+		dbconnections.InitMongoDB(dbconnections.DocumentDBURI)
+		apiserver.StartAPIServer()
 	case "AZURE":
 		log.Println("AZURE: Coming soon")
 	case "GCP":
 		log.Println("GCP: Coming soon")
 	case "ONPREM":
-		dbconnections.InitMongoDB()
+		dbconnections.InitMongoDB(dbconnections.MongoURI)
 		apiserver.StartAPIServer()
 	default:
 		log.Println("Uknown Environment")
