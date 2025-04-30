@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reaperc2-ns
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reaperc2-myregistrykey
+  namespace: reaperc2-ns
+data:
+  .dockerconfigjson: {{ cat ~/.docker/config.json | base64 -w 0 }}
+type: kubernetes.io/dockerconfigjson
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reaperc2-deployment
+  namespace: reaperc2-ns
+  labels:
+    app: reaperc2-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reaperc2-deployment
+  template:
+    metadata:
+      labels:
+        app: reaperc2-deployment
+    spec:
+      containers:
+        - name: reaperc2-deployment
+          image: ACCOUNTNUMBER.dkr.ecr.us-east-1.amazonaws.com/reaperc2:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: docdb-ca-volume
+              mountPath: /etc/ssl/certs/rds-combined-ca-bundle.pem
+              subPath: rds-combined-ca-bundle.pem
+              readOnly: true
+      volumes:
+        - name: docdb-ca-volume
+          configMap:
+            name: docdb-ca-cert
+      imagePullSecrets:
+      - name: reaperc2-myregistrykey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reaperc2-service
+  namespace: reaperc2-ns
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: reaperc2-deployment
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reaperc2-ingress
+  namespace: reaperc2-ns
+  annotations:
+    #kubernetes.io/ingress.class: "traefik"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    #cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    traefik.ingress.kubernetes.io/frontend-entry-points: http, https
+    traefik.ingress.kubernetes.io/redirect-entry-point: https
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: subdomain.domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: reaperc2-service
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - subdomain.domain.com
+    secretName: c2-reaperc2-com-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: reaperc2-ingressroute
+  namespace: reaperc2-ns
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`subdomain.domain.com`)
+      kind: Rule
+      services:
+        - name: reaperc2-service
+          port: 8080
+  tls:
+    certResolver: letsencrypt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docdb-ca-cert
+  namespace: reaperc2-ns
+data:
+  rds-combined-ca-bundle.pem: |
+    -----BEGIN CERTIFICATE-----
+..
+..
+

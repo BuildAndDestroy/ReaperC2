@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: docdb-tester
+spec:
+  containers:
+  - name: mongo-client
+    image: mongo:7.0
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: ca-cert
+      mountPath: /certs
+  restartPolicy: Never
+  volumes:
+  - name: ca-cert
+    configMap:
+      name: docdb-ca-cert
