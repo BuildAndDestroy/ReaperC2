@@ -165,6 +165,25 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          env:
+            - name: DEPLOY_ENV
+              value: "ONPREM"
+            - name: MONGO_HOST
+              value: "mongodb-service.reaperc2-ns.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: api_db-user-secret
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: api_dp-user-password-secret
+            - name: MONGO_DATABASE
+              value: "api_db"
       imagePullSecrets:
       - name: reaperc2-myregistrykey
 ---

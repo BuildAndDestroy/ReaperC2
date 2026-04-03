@@ -1,19 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-ADMINUSER="admin"
-ADMINPASSWORD="supersecretpasswordlol"
-APIUSER="api_user"
-APIUSERPASSWORD="api_mongoApiPassword"
-# MONGOIPADDR="172.17.0.2"
-MONGOIPADDR="mongodb-service.reaperc2-ns.svc.cluster.local"
-MONGOPORT="27017"
-MONGO_URI="mongodb://$ADMINUSER:$ADMINPASSWORD@$MONGOIPADDR:$MONGOPORT"
+ADMINUSER="${MONGO_ADMIN_USER:-admin}"
+ADMINPASSWORD="${MONGO_ADMIN_PASSWORD:-supersecretpasswordlol}"
+APIUSER="${MONGO_API_USER:-api_user}"
+APIUSERPASSWORD="${MONGO_API_PASSWORD:-api_mongoApiPassword}"
+
+# Override for local Docker (e.g. run_tests.sh) or in-cluster exec:
+#   MONGO_HOST=mongodb MONGO_PORT=27017 ./setup_mongo.sh
+MONGO_HOST="${MONGO_HOST:-mongodb-service.reaperc2-ns.svc.cluster.local}"
+MONGO_PORT="${MONGO_PORT:-27017}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_JSON="${DATA_JSON:-$SCRIPT_DIR/data.json}"
+# Set to 0 to skip optional mongoimport of data.json
+IMPORT_DATA_JSON="${IMPORT_DATA_JSON:-1}"
+DATA_JSON_COLLECTION="${DATA_JSON_COLLECTION:-seed_docs}"
+
+MONGO_URI="mongodb://${ADMINUSER}:${ADMINPASSWORD}@${MONGO_HOST}:${MONGO_PORT}"
 DB_API_NAME="api_db"
 DB_DATA_COLLECTION="data"
 COLLECTION_CLIENTS="clients"
 COLLECTION_HEARTBEAT="heartbeat"
 
-echo "Creating MongoDB database $DB_API_NAME and collections: $COLLECTION_CLIENTS, $COLLECTION_HEARTBEAT, and $COLLECTION_CLIENTS..."
+echo "Connecting to ${MONGO_HOST}:${MONGO_PORT}"
+echo "Creating MongoDB database $DB_API_NAME and collections: $COLLECTION_CLIENTS, $COLLECTION_HEARTBEAT, $DB_DATA_COLLECTION..."
 
 # Test data, DO NOT USE IN PROD
 # This will run as a test, containers will be killed and deleted on stop
@@ -81,7 +92,6 @@ db.$DB_DATA_COLLECTION.insertMany([
         "ClientId": "550e8400-e29b-41d4-a716-446655440000",
         "info": "Sample data for client 1",
         "user": "",
-        groups: "",
         "hostname": "",
         "ip_address": "",
         "groups": [],
@@ -91,7 +101,6 @@ db.$DB_DATA_COLLECTION.insertMany([
         "ClientId": "660e9400-e29b-41d4-a716-556655440111",
         "info": "Sample data for client 2",
         "user": "",
-        groups: "",
         "hostname": "",
         "ip_address": "",
         "groups": [],
@@ -115,9 +124,16 @@ db.createUser({
 print("✅ Created $APIUSER with access to $DB_API_NAME");
 EOF
 
-# Import JSON data
-#mongoimport --db "$DB_API_NAME" --collection data_json_as_collection --file data.json --jsonArray
-
+if [[ "${IMPORT_DATA_JSON}" == "1" ]] && [[ -f "${DATA_JSON}" ]]; then
+  echo "Importing ${DATA_JSON} -> ${DB_API_NAME}.${DATA_JSON_COLLECTION}"
+  mongoimport \
+    --uri="${MONGO_URI}/${DB_API_NAME}?authSource=admin" \
+    --collection="${DATA_JSON_COLLECTION}" \
+    --file="${DATA_JSON}" \
+    --jsonArray
+else
+  echo "Skipping data.json import (IMPORT_DATA_JSON=${IMPORT_DATA_JSON} or missing file)."
+fi
 
 echo "MongoDB setup complete!"
 

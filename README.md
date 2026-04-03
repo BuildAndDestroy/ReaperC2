@@ -17,48 +17,70 @@ Currently only uses commands, we will need to integrate better calls
 
 ## Example - Testing
 
+All helper scripts and the `mongoclient` image live under [`test/`](test/).
 
-### Database
+### One-shot local Mongo seed (recommended)
 
-* Spin up the test database to use collections
+[`test/run_tests.sh`](test/run_tests.sh) creates a Docker network, starts **MongoDB Community** in a container, waits until it is ready, builds the **mongoclient** image, and runs [`test/setup_mongo.sh`](test/setup_mongo.sh) inside that image. It is **non-interactive** and suitable for CI.
 
-```
-$ docker run --rm -it --name mongodb -p 27017:27017 -d mongodb/mongodb-community-server:latest
-```
-
-* Run the test script to setup mongodb collections
-
-```
-$ docker build -t mongoclient -f mongoclient.dockerfile .
-
-$ docker run --rm -it  mongoclient
+```bash
+cd test
+./run_tests.sh
 ```
 
-* Spin up the test client to work with the database
+By default the Mongo container is removed when the script exits. To leave it running on `localhost:27017` for manual work:
 
+```bash
+KEEP_MONGO=1 ./run_tests.sh
 ```
-$ docker run --rm -it --entrypoint=bash  mongoclient
 
-$ mongosh mongodb://172.17.0.2:27017
+Useful environment variables (both scripts honor the overlapping ones):
+
+| Variable | Purpose |
+|----------|---------|
+| `MONGO_HOST` / `MONGO_PORT` | Mongo host and port (defaults: in-cluster service DNS for `setup_mongo.sh`; `run_tests.sh` sets host to the Mongo container name on the test network) |
+| `MONGO_ADMIN_USER` / `MONGO_ADMIN_PASSWORD` | Root user for seeding (defaults match Docker `MONGO_INITDB_*` in `run_tests.sh`) |
+| `MONGO_API_USER` / `MONGO_API_PASSWORD` | Application user created in `api_db` (defaults: `api_user` / `api_mongoApiPassword`) |
+| `IMPORT_DATA_JSON` | Set to `0` to skip importing [`test/data.json`](test/data.json) |
+| `DATA_JSON` | Path to JSON array file for `mongoimport` (default: `test/data.json` beside the script) |
+| `DATA_JSON_COLLECTION` | Target collection for that import (default: `seed_docs`) |
+| `DOCKER_NETWORK` / `MONGO_CONTAINER` | Override Docker network name and Mongo container name in `run_tests.sh` |
+| `KEEP_MONGO` | `1` = do not remove the Mongo container on exit |
+| `KEEP_TEST_NETWORK` | `1` = skip removing the test Docker network when cleaning up (only if `KEEP_MONGO` is not used) |
+
+[`test/setup_mongo.sh`](test/setup_mongo.sh) creates `api_db` with `clients`, `heartbeat`, and `data` collections (plus indexes and sample documents). [`test/data.json`](test/data.json) is imported as **extra** seed documents into `seed_docs`; it does not replace the scripted fixture data.
+
+**Kubernetes:** exec into a pod that has `mongosh` and this repo (or use the mongoclient image), then point at your cluster service, for example:
+
+```bash
+export MONGO_HOST=mongodb-service.reaperc2-ns.svc.cluster.local
+export MONGO_PORT=27017
+./setup_mongo.sh
 ```
+
+**Manual Docker** (if you do not use `run_tests.sh`): build and run from `test/` with `MONGO_HOST` set to a resolvable hostname for the Mongo container on the same Docker network.
 
 ### Server
 
-* Open pkg/dbconnections/mongoconnections.go and uncomment the Docker IP
+The server reads Mongo settings from environment variables (see [`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)). After seeding with the defaults above, run locally against Docker Mongo on the published port:
+
+```bash
+export DEPLOY_ENV=ONPREM
+export MONGO_HOST=127.0.0.1
+export MONGO_PORT=27017
+export MONGO_USERNAME=api_user
+export MONGO_PASSWORD=api_mongoApiPassword
+export MONGO_DATABASE=api_db
+
+cd cmd && env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o ReaperC2
+./ReaperC2
+```
+
+Example log lines:
 
 ```
-	//mongoFqdn           = "mongodb-service.reaperc2-ns.svc.cluster.local"
-	mongoFqdn        = "172.17.0.2"
-```
-
-* Build and run the Server
-
-```
-$ env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o ReaperC2
-
-$ ./ReaperC2 
-2025/03/17 22:41:52 Connected to MongoDB!
-2025/03/17 22:41:52 Server running on port 8080...
+Connected to MongoDB!
+Server running on port 8080...
 ```
 
 ### Client
