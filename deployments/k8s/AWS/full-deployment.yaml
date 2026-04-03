@@ -12,6 +12,18 @@ data:
   .dockerconfigjson: {{ cat ~/.docker/config.json | base64 -w 0 }}
 type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reaperc2-mongodb-credentials
+  namespace: reaperc2-ns
+type: Opaque
+stringData:
+  mongo-host: "YOUR_DOCUMENTDB_CLUSTER_ENDPOINT.cluster-XXXXXXXX.us-east-1.docdb.amazonaws.com"
+  mongo-username: "api_user"
+  mongo-password: "YOUR_MONGO_PASSWORD"
+  mongo-database: "api_db"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,6 +54,33 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          env:
+            - name: DEPLOY_ENV
+              value: "AWS"
+            - name: MONGO_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-credentials
+                  key: mongo-host
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-credentials
+                  key: mongo-username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-credentials
+                  key: mongo-password
+            - name: MONGO_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-credentials
+                  key: mongo-database
+            - name: MONGO_TLS_CA_FILE
+              value: "/etc/ssl/certs/rds-combined-ca-bundle.pem"
           volumeMounts:
             - name: docdb-ca-volume
               mountPath: /etc/ssl/certs/rds-combined-ca-bundle.pem
