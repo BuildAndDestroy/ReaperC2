@@ -63,6 +63,8 @@ input, select, textarea { width: 100%; max-width: 32rem; margin-top: .25rem; pad
 textarea { min-height: 4rem; max-width: 100%; }
 button.btn { cursor: pointer; padding: .5rem 1rem; border-radius: 6px; border: 1px solid #2ea043; background: var(--green); color: #fff; font-weight: 600; margin-top: .75rem; }
 button.btn-secondary { border-color: var(--border); background: #21262d; color: var(--text); }
+button.btn-kill { border-color: #f85149; background: #da3633; color: #fff; font-weight: 600; }
+button.btn-kill:hover { background: #b62324; border-color: #ff7b72; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
 th { color: var(--muted); font-weight: 600; }

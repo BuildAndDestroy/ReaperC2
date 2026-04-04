@@ -107,7 +107,8 @@ The process serves **two HTTP listeners**: the **beacon API** (implants / Scythe
 | `BEACON_ADDR` | Beacon API bind address (default `:8080`) |
 | `ADMIN_ADDR` | Admin panel bind address (default `:8443`) |
 | `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | If **no** operators exist in MongoDB, create the first account on startup (password stored as **Argon2id**). Omit to create operators manually in the `operators` collection. |
-| `BEACON_PUBLIC_BASE_URL` | Public base URL for Scythe examples (default `http://127.0.0.1:8080`). Set to your ingress URL in production. |
+| `BEACON_PUBLIC_BASE_URL` | Public base URL for Scythe examples (default `http://127.0.0.1:8080`, no path). Set to your ingress URL in production. |
+| `BEACON_PIVOT_PROXY` | Optional default `host:port` for Scythe `--proxy` when the beacon has a **parent** (pivot). Per-beacon override: **Pivot proxy** field or `pivot_proxy` in the generate API. |
 | `ADMIN_SESSION_TTL_HOURS` | Server-side session lifetime (default `168`). |
 | `ADMIN_COOKIE_SECURE` | Set to `true` if the admin UI is only served over HTTPS (adds `Secure` on session cookies). |
 | `ADMIN_DISABLE` | Set to `1` to run **only** the beacon listener (no admin port). |
@@ -121,7 +122,7 @@ Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Bea
 
 | Area | Purpose |
 |------|---------|
-| **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain). Each generation **always saves a profile** in `beacon_profiles` (custom name or auto `beacon-xxxxxxxx-YYYYMMDD-hhmmss`). List/delete saved profiles. |
+| **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain, optional pivot proxy for Scythe). Each generation **always saves a profile** in `beacon_profiles` (custom name or auto `beacon-xxxxxxxx-YYYYMMDD-hhmmss`). List/delete saved profiles. |
 | **Reports** | Download JSON or CSV exports (redacted or full) for briefings. |
 | **Topology** | Graph of C2 → beacons (and parent → child when `ParentClientId` is set on a client). |
 | **Chat** | Operator messages stored in `operator_chat`. |
@@ -135,8 +136,10 @@ Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Bea
 * Using a client, such as Scythe, we query the API
 
 ```
-$ ./Scythe Http --method GET --timeout 5s --url http://127.0.0.1:8080 --headers 'Content-Type:application/json,X-Client-Id: 550e8400-e29b-41d4-a716-446655440000,X-API-Secret: mysecurekey1' --directories '/heartbeat'
+$ ./Scythe Http --method GET --timeout 5s --url http://127.0.0.1:8080 --headers 'Content-Type:application/json,X-Client-Id:550e8400-e29b-41d4-a716-446655440000,X-API-Secret:mysecurekey1' --directories '/heartbeat/550e8400-e29b-41d4-a716-446655440000,/heartbeat'
 ```
+
+With a pivot (parent beacon), the example adds `--proxy <host:port>` (from the form, or `BEACON_PIVOT_PROXY`).
 
 * If there is no authenticated user, then no access.
 

@@ -23,19 +23,20 @@ var OperatorChatCollection *mongo.Collection
 
 // BeaconProfile is a saved beacon profile (for reuse and reporting).
 type BeaconProfile struct {
-	ID               primitive.ObjectID `bson:"_id,omitempty"`
-	Name             string             `bson:"name"`
-	ClientID         string             `bson:"client_id"`
-	Secret           string             `bson:"secret"`
-	ConnectionType   string             `bson:"connection_type"`
-	ParentClientID   string             `bson:"parent_client_id,omitempty"`
-	Label                 string `bson:"label,omitempty"`
-	HeartbeatIntervalSec  int    `bson:"heartbeat_interval_sec,omitempty"`
-	ScytheExample         string `bson:"scythe_example"`
-	BeaconBaseURL    string             `bson:"beacon_base_url"`
-	HeartbeatURL     string             `bson:"heartbeat_url"`
-	CreatedAt        time.Time          `bson:"created_at"`
-	CreatedBy        string             `bson:"created_by"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty"`
+	Name                 string             `bson:"name"`
+	ClientID             string             `bson:"client_id"`
+	Secret               string             `bson:"secret"`
+	ConnectionType       string             `bson:"connection_type"`
+	ParentClientID       string             `bson:"parent_client_id,omitempty"`
+	PivotProxy           string             `bson:"pivot_proxy,omitempty"`
+	Label                string             `bson:"label,omitempty"`
+	HeartbeatIntervalSec int                `bson:"heartbeat_interval_sec,omitempty"`
+	ScytheExample        string             `bson:"scythe_example"`
+	BeaconBaseURL        string             `bson:"beacon_base_url"`
+	HeartbeatURL         string             `bson:"heartbeat_url"`
+	CreatedAt            time.Time          `bson:"created_at"`
+	CreatedBy            string             `bson:"created_by"`
 }
 
 // ChatMessage is one operator chat line.
