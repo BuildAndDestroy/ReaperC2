@@ -1,0 +1,49 @@
+# Local stack: MongoDB + ReaperC2 (beacon :8080, admin :8443).
+# Usage: cp .env.example .env && docker compose up --build
+# Open http://127.0.0.1:8443/login (bootstrap operator from .env on first run).
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "${MONGO_HOST_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-reaperc2_dev_root}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  reaperc2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "${BEACON_HOST_PORT:-8080}:8080"
+      - "${ADMIN_HOST_PORT:-8443}:8443"
+    environment:
+      DEPLOY_ENV: ONPREM
+      MONGO_HOST: mongo
+      MONGO_PORT: "27017"
+      MONGO_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_PASSWORD: ${MONGO_ROOT_PASSWORD:-reaperc2_dev_root}
+      MONGO_DATABASE: ${MONGO_DATABASE:-api_db}
+      MONGO_AUTH_SOURCE: admin
+      BEACON_ADDR: ":8080"
+      ADMIN_ADDR: ":8443"
+      BEACON_PUBLIC_BASE_URL: ${BEACON_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-changeme}
+
+volumes:
+  mongo_data:

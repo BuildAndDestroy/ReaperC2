@@ -9,3 +9,6 @@
 
 # DocumentDB CA file
 *rds-combined-ca-bundle.pem
+
+# Local Docker Compose secrets
+.env
