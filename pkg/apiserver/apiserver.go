@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // Setting endpoints as a constant
@@ -118,6 +119,11 @@ func HandleFetchData(w http.ResponseWriter, r *http.Request) {
 func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
 	result, err := dbconnections.FetchHeartbeat()
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			// Legacy collection may be empty; Scythe still polls plain /heartbeat when listed in --directories.
+			JsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
 		log.Println("Error fetching heartbeat:", err)
 		http.Error(w, `{"error": "Failed to fetch heartbeat"}`, http.StatusInternalServerError)
 		return
@@ -126,7 +132,7 @@ func HandleHeartBeat(w http.ResponseWriter, r *http.Request) {
 	// Extract only the "status" field
 	status, ok := result["status"].(string)
 	if !ok {
-		http.Error(w, "Invalid data format", http.StatusInternalServerError)
+		JsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
 

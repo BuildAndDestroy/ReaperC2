@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -124,6 +125,8 @@ type createBeaconRequest struct {
 	ConnectionType string `json:"connection_type"`
 	ParentClientId string `json:"parent_client_id"`
 	Label          string `json:"label"`
+	// PivotProxy is host:port for Scythe --proxy when ParentClientId is set (e.g. 172.17.0.4:2222). Falls back to BEACON_PIVOT_PROXY.
+	PivotProxy string `json:"pivot_proxy,omitempty"`
 	// HeartbeatIntervalSec expected seconds between phone-homes (topology green/yellow/gray). Default 30.
 	HeartbeatIntervalSec int `json:"heartbeat_interval_sec"`
 	// ProfileName optional; if empty, server assigns a time-based name (profile is always saved).
@@ -177,15 +180,15 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	secret := hex.EncodeToString(secretBytes)
 
 	doc := dbconnections.BeaconClientDocument{
-		ClientId:               clientID,
-		Secret:                 secret,
-		Active:                 true,
-		ConnectionType:         req.ConnectionType,
-		HeartbeatIntervalSec:   hbSec,
-		ExpectedHeartBeat:      fmt.Sprintf("%ds", hbSec),
-		Commands:               []string{},
-		ParentClientId:         strings.TrimSpace(req.ParentClientId),
-		BeaconLabel:            strings.TrimSpace(req.Label),
+		ClientId:             clientID,
+		Secret:               secret,
+		Active:               true,
+		ConnectionType:       req.ConnectionType,
+		HeartbeatIntervalSec: hbSec,
+		ExpectedHeartBeat:    fmt.Sprintf("%ds", hbSec),
+		Commands:             []string{},
+		ParentClientId:       strings.TrimSpace(req.ParentClientId),
+		BeaconLabel:          strings.TrimSpace(req.Label),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -196,10 +199,12 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	}
 	base := beaconPublicBaseURL()
 	hURL := fmt.Sprintf("%s/heartbeat/%s", base, clientID)
-	scythe := fmt.Sprintf(
-		`Scythe Http --method GET --timeout %ds --url %q --headers 'Content-Type:application/json,X-Client-Id:%s,X-API-Secret:%s' --directories '/heartbeat'`,
-		hbSec, hURL, clientID, secret,
-	)
+	hasPivot := strings.TrimSpace(doc.ParentClientId) != ""
+	pivotProxy := strings.TrimSpace(req.PivotProxy)
+	if hasPivot && pivotProxy == "" {
+		pivotProxy = strings.TrimSpace(os.Getenv("BEACON_PIVOT_PROXY"))
+	}
+	scythe := buildScytheExample(base, clientID, secret, hbSec, hasPivot, pivotProxy)
 	profileName := strings.TrimSpace(req.ProfileName)
 	if profileName == "" {
 		profileName = defaultBeaconProfileName(clientID)
@@ -215,31 +220,42 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		ScytheExample:        scythe,
 		BeaconBaseURL:        base,
 		HeartbeatURL:         hURL,
+		PivotProxy:           pivotProxy,
 		CreatedBy:            user,
 	})
 	if profErr != nil {
 		log.Printf("admin: save profile: %v", profErr)
 	}
 	if aerr := dbconnections.InsertAuditLog(ctx, user, dbconnections.AuditActionBeaconCreated, bson.M{
-		"client_id":               clientID,
-		"profile_name":            profileName,
-		"connection_type":         req.ConnectionType,
-		"heartbeat_interval_sec":  hbSec,
-		"profile_saved_ok":        profErr == nil,
+		"client_id":              clientID,
+		"profile_name":           profileName,
+		"connection_type":        req.ConnectionType,
+		"heartbeat_interval_sec": hbSec,
+		"profile_saved_ok":       profErr == nil,
 	}); aerr != nil {
 		log.Printf("admin: audit log: %v", aerr)
 	}
 	resp := createBeaconResponse{
-		ClientID:        clientID,
-		Secret:          secret,
-		ProfileName:     profileName,
-		BeaconBaseURL:   base,
-		HeartbeatURL:    hURL,
-		ScytheExample:   scythe,
+		ClientID:           clientID,
+		Secret:             secret,
+		ProfileName:        profileName,
+		BeaconBaseURL:      base,
+		HeartbeatURL:       hURL,
+		ScytheExample:      scythe,
 		HeadersDescription: "Beacon middleware validates X-API-Secret against MongoDB; ClientId is in the URL path. X-Client-Id in headers is optional for your tooling.",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// buildScytheExample matches the Scythe CLI layout: base URL only; directories /heartbeat/<uuid> and /heartbeat; --proxy when pivoting.
+func buildScytheExample(baseURL, clientID, secret string, hbSec int, includeProxy bool, proxyHostPort string) string {
+	var proxyPart string
+	if includeProxy && strings.TrimSpace(proxyHostPort) != "" {
+		proxyPart = " --proxy " + strings.TrimSpace(proxyHostPort)
+	}
+	return fmt.Sprintf(`./Scythe Http --method GET%s --timeout %ds --url %q --headers 'Content-Type:application/json,X-Client-Id:%s,X-API-Secret:%s' --directories '/heartbeat/%s,/heartbeat'`,
+		proxyPart, hbSec, baseURL, clientID, secret, clientID)
 }
 
 func jsonError(w http.ResponseWriter, status int, msg string) {

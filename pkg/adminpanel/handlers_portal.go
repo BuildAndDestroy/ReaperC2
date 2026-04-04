@@ -94,6 +94,11 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 			rows.WriteString(template.HTMLEscapeString(p.ParentClientID))
 			rows.WriteString(`</div></div>`)
 		}
+		if p.PivotProxy != "" {
+			rows.WriteString(`<div class="creds-row"><div class="creds-label">Pivot proxy</div><div class="mono">`)
+			rows.WriteString(template.HTMLEscapeString(p.PivotProxy))
+			rows.WriteString(`</div></div>`)
+		}
 		if p.HeartbeatIntervalSec > 0 {
 			rows.WriteString(`<div class="creds-row"><div class="creds-label">Expected interval (s)</div><div class="mono">`)
 			rows.WriteString(strconv.Itoa(p.HeartbeatIntervalSec))
@@ -116,7 +121,9 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`</pre><button type="button" class="btn-tiny" onclick="copyBeaconField('`)
 		rows.WriteString(idScythe)
 		rows.WriteString(`')">Copy</button></div>`)
-		rows.WriteString(`</div></details><button type="button" class="btn btn-secondary" data-del="`)
+		rows.WriteString(`</div></details><button type="button" class="btn btn-kill" data-kill="`)
+		rows.WriteString(template.HTMLEscapeString(p.ClientID))
+		rows.WriteString(`">Kill</button><button type="button" class="btn btn-secondary" data-del="`)
 		rows.WriteString(pid)
 		rows.WriteString("\">Delete</button></div></td></tr>")
 	}
@@ -126,13 +133,15 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>Beacons</h1>
-<p class="muted">Generate a <code>clients</code> row and optionally save a named profile for reuse and exports.</p>
+<p class="muted">Generate a <code>clients</code> row and optionally save a named profile for reuse and exports. <strong>Kill</strong> queues the Scythe self-destruct command on the next heartbeat.</p>
 <div class="card">
   <h2>Generate</h2>
   <label>Display label (topology / reports)</label>
   <input id="lbl" placeholder="e.g. HR-workstation-04">
   <label>Parent beacon ClientId (optional, for pivot chain)</label>
   <input id="par" placeholder="UUID of upstream beacon" class="mono">
+  <label>Pivot proxy host:port (optional; used in Scythe <code>--proxy</code> when parent is set; or set env <code>BEACON_PIVOT_PROXY</code>)</label>
+  <input id="pivproxy" placeholder="e.g. 172.17.0.4:2222" class="mono">
   <label>Expected phone-home interval (seconds)</label>
   <input id="hbsec" type="number" min="5" max="86400" value="30" title="Green while check-ins stay within this window; yellow after a missed interval (see Topology).">
   <label>Profile name (optional)</label>
@@ -153,6 +162,8 @@ document.getElementById('gen').onclick = async function() {
   out.style.display = 'block';
   out.textContent = '…';
   var body = { connection_type: 'HTTP', label: document.getElementById('lbl').value.trim(), parent_client_id: document.getElementById('par').value.trim() };
+  var ppx = document.getElementById('pivproxy').value.trim();
+  if (ppx) body.pivot_proxy = ppx;
   var hbn = parseInt(document.getElementById('hbsec').value, 10);
   if (!isNaN(hbn) && hbn >= 5) body.heartbeat_interval_sec = hbn;
   var pn = document.getElementById('pname').value.trim();
@@ -183,6 +194,16 @@ function copyBeaconFallback(text) {
   try { document.execCommand('copy'); } catch (e) {}
   document.body.removeChild(ta);
 }
+document.querySelectorAll('[data-kill]').forEach(function(btn) {
+  btn.onclick = async function() {
+    if (!confirm('Queue self-destruct for this beacon? The command sendmetojesusdog will run on the next check-in.')) return;
+    var cid = btn.getAttribute('data-kill');
+    var r = await fetch('/api/beacon-kill', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: cid }) });
+    var j = await r.json().catch(function() { return {}; });
+    if (r.ok) alert('Kill command queued.');
+    else alert(j.error || r.statusText || 'Failed');
+  };
+});
 document.querySelectorAll('[data-del]').forEach(function(btn) {
   btn.onclick = async function() {
     if (!confirm('Delete this profile?')) return;

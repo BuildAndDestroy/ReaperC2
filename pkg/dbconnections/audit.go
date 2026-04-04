@@ -14,12 +14,13 @@ const collectionAuditLogs = "audit_logs"
 
 // Audit action names (portal audit trail).
 const (
-	AuditActionBeaconCreated     = "beacon_created"
-	AuditActionUserCreated       = "user_created"
-	AuditActionReportExported    = "report_exported"
-	AuditActionBeaconProfileDel     = "beacon_profile_deleted"
-	AuditActionAuditLogExported     = "audit_log_exported"
-	AuditActionBeaconCommandQueued  = "beacon_command_queued"
+	AuditActionBeaconCreated       = "beacon_created"
+	AuditActionUserCreated         = "user_created"
+	AuditActionReportExported      = "report_exported"
+	AuditActionBeaconProfileDel    = "beacon_profile_deleted"
+	AuditActionAuditLogExported    = "audit_log_exported"
+	AuditActionBeaconCommandQueued = "beacon_command_queued"
+	AuditActionBeaconKillQueued    = "beacon_kill_queued"
 )
 
 // AuditLogsCollection stores operator/C2 portal audit events.
