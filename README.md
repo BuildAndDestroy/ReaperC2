@@ -17,6 +17,18 @@ Currently only uses commands, we will need to integrate better calls
 
 ## Example - Testing
 
+### Docker Compose (full stack)
+
+[`docker-compose.yml`](docker-compose.yml) runs **MongoDB 7** and a **ReaperC2** container (beacon **8080**, admin **8443**) on a shared network. Copy [`.env.example`](.env.example) to `.env`, set passwords, then:
+
+```bash
+docker compose up --build
+```
+
+- Admin UI: `http://127.0.0.1:8443/login` — first operator comes from `ADMIN_BOOTSTRAP_*` in `.env` when the `operators` collection is empty.
+- MongoDB is also published on **27017** for local tools (override with `MONGO_HOST_PORT` in `.env`).
+- The app connects with the Mongo **root** user and `MONGO_AUTH_SOURCE=admin` (see [`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)); change `MONGO_USERNAME` / `MONGO_PASSWORD` / `MONGO_AUTH_SOURCE` if you switch to an application user.
+
 All helper scripts and the `mongoclient` image live under [`test/`](test/).
 
 ### One-shot local Mongo seed (recommended)
@@ -71,6 +83,8 @@ export MONGO_PORT=27017
 export MONGO_USERNAME=api_user
 export MONGO_PASSWORD=api_mongoApiPassword
 export MONGO_DATABASE=api_db
+# Optional: when the DB user lives in the admin DB (e.g. root user)
+# export MONGO_AUTH_SOURCE=admin
 
 cd cmd && env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o ReaperC2
 ./ReaperC2
@@ -80,8 +94,41 @@ Example log lines:
 
 ```
 Connected to MongoDB!
-Server running on port 8080...
+Beacon API listening on :8080
+Admin panel listening on :8443
 ```
+
+### Admin panel (same binary, second listener)
+
+The process serves **two HTTP listeners**: the **beacon API** (implants / Scythe) and an **operator web UI** for signing in and creating `clients` rows (MongoDB) with a generated Scythe example.
+
+| Variable | Purpose |
+|----------|---------|
+| `BEACON_ADDR` | Beacon API bind address (default `:8080`) |
+| `ADMIN_ADDR` | Admin panel bind address (default `:8443`) |
+| `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | If **no** operators exist in MongoDB, create the first account on startup (password stored as **Argon2id**). Omit to create operators manually in the `operators` collection. |
+| `BEACON_PUBLIC_BASE_URL` | Public base URL for Scythe examples (default `http://127.0.0.1:8080`). Set to your ingress URL in production. |
+| `ADMIN_SESSION_TTL_HOURS` | Server-side session lifetime (default `168`). |
+| `ADMIN_COOKIE_SECURE` | Set to `true` if the admin UI is only served over HTTPS (adds `Secure` on session cookies). |
+| `ADMIN_DISABLE` | Set to `1` to run **only** the beacon listener (no admin port). |
+| `ADMIN_ARGON2_TIME` | Argon2id time cost (default `3`). |
+| `ADMIN_ARGON2_MEMORY_KIB` | Argon2id memory in KiB (default `65536`, i.e. 64 MiB). |
+| `ADMIN_ARGON2_THREADS` | Argon2id parallelism (default `4`). |
+
+Operator passwords are stored as **Argon2id** (serialized in `operators.password_hash`). **Existing bcrypt hashes** (`$2a$` / `$2b$`) still verify so you can migrate gradually.
+
+Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Beacons**). The UI includes:
+
+| Area | Purpose |
+|------|---------|
+| **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain). Each generation **always saves a profile** in `beacon_profiles` (custom name or auto `beacon-xxxxxxxx-YYYYMMDD-hhmmss`). List/delete saved profiles. |
+| **Reports** | Download JSON or CSV exports (redacted or full) for briefings. |
+| **Topology** | Graph of C2 → beacons (and parent → child when `ParentClientId` is set on a client). |
+| **Chat** | Operator messages stored in `operator_chat`. |
+| **Users** (admins only) | Create additional portal accounts and assign **Admin** or **Operator** (`/users`, `POST /api/users`). |
+| **Logs** (admins only) | View recent **audit** events (`audit_logs` in MongoDB) and **download JSON** (`/api/logs/export`, `/logs`). |
+
+**Roles** (field `operators.role` in MongoDB): **Admin** — full portal access including user management. **Operator** — beacons, reports, topology, chat, and profile management; **cannot** create users or call user APIs. Accounts without `role` are treated as **Admin** for backward compatibility. The bootstrap account is always **Admin**.
 
 ### Client
 

