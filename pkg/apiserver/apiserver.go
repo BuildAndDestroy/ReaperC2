@@ -162,6 +162,9 @@ func HandleHeartBeatUUID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to retrieve commands", http.StatusInternalServerError)
 		return
 	}
+	if len(commands) > 0 {
+		auditBeaconCommandsDelivered(uuid, commands)
+	}
 
 	// Prepare response
 	response := map[string]interface{}{
@@ -241,6 +244,8 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditBeaconOutputReceived(clientUUID, requestData.Command, requestData.Output)
+
 	go func(id string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -260,6 +265,39 @@ func HandleFourOhFour(w http.ResponseWriter, r *http.Request) {
 		"error":   "Not Found",
 		"message": "Endpoint not found.",
 	})
+}
+
+func auditBeaconCommandsDelivered(clientID string, commands []string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := dbconnections.InsertAuditLog(ctx, "beacon", dbconnections.AuditActionBeaconCommandsDelivered, bson.M{
+			"client_id": clientID,
+			"commands":  commands,
+		}); err != nil {
+			log.Printf("audit beacon_commands_delivered: %v", err)
+		}
+	}()
+}
+
+func auditBeaconOutputReceived(clientID, command, output string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		const maxPreview = 2048
+		preview := output
+		if len(preview) > maxPreview {
+			preview = preview[:maxPreview] + "… [truncated]"
+		}
+		if err := dbconnections.InsertAuditLog(ctx, "beacon", dbconnections.AuditActionBeaconOutputReceived, bson.M{
+			"client_id":      clientID,
+			"command":        command,
+			"output_preview": preview,
+			"output_bytes":   len(output),
+		}); err != nil {
+			log.Printf("audit beacon_output_received: %v", err)
+		}
+	}()
 }
 
 // jsonResponse sends JSON data with the appropriate headers

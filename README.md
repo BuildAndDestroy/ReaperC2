@@ -123,11 +123,11 @@ Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Bea
 | Area | Purpose |
 |------|---------|
 | **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain, optional pivot proxy for Scythe). Each generation **always saves a profile** in `beacon_profiles` (custom name or auto `beacon-xxxxxxxx-YYYYMMDD-hhmmss`). List/delete saved profiles. |
-| **Reports** | Download JSON or CSV exports (redacted or full) for briefings. |
+| **Reports** | Download JSON or CSV exports (redacted or full). JSON includes `command_output` (recent beacon command results from the `data` collection). |
 | **Topology** | Graph of C2 → beacons (and parent → child when `ParentClientId` is set on a client). |
 | **Chat** | Operator messages stored in `operator_chat`. |
 | **Users** (admins only) | Create additional portal accounts and assign **Admin** or **Operator** (`/users`, `POST /api/users`). |
-| **Logs** (admins only) | View recent **audit** events (`audit_logs` in MongoDB) and **download JSON** (`/api/logs/export`, `/logs`). |
+| **Logs** (admins only) | View recent **audit** events (`audit_logs`): operator actions plus **beacon** deliveries (`beacon_commands_delivered`) and **output** (`beacon_output_received`). Download JSON (`/api/logs/export`, `/logs`). |
 
 **Roles** (field `operators.role` in MongoDB): **Admin** — full portal access including user management. **Operator** — beacons, reports, topology, chat, and profile management; **cannot** create users or call user APIs. Accounts without `role` are treated as **Admin** for backward compatibility. The bootstrap account is always **Admin**.
 
