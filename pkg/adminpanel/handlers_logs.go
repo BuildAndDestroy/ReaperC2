@@ -33,8 +33,8 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 		if e.Details != nil {
 			b, _ := json.Marshal(e.Details)
 			detail = string(b)
-			if len(detail) > 120 {
-				detail = detail[:120] + "…"
+			if len(detail) > 360 {
+				detail = detail[:360] + "…"
 			}
 		}
 		tbl.WriteString("<tr><td>")
@@ -53,7 +53,7 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>Audit logs</h1>
-<p class="muted">Portal events (beacon generation, report exports, user creation, profile deletes, etc.). Admins only.</p>
+<p class="muted">Portal and <strong>beacon</strong> events: queued commands, commands delivered on heartbeat, command output received (<code>beacon</code> actor), report exports, user creation, profile deletes, etc. Details may truncate in the table; use JSON export for full text. Admins only.</p>
 <div class="card">
   <p><a href="/api/logs/export" download="reaperc2-audit-log.json"><strong>Download full audit log (JSON)</strong></a> — up to 50k newest entries.</p>
 </div>

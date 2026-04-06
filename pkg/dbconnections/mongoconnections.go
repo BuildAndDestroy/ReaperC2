@@ -303,6 +303,31 @@ func ListCommandOutputForClient(ctx context.Context, clientID string, limit int6
 	return out, cur.Err()
 }
 
+// ListRecentCommandOutputForExport returns newest rows from the data collection (reports / briefings).
+func ListRecentCommandOutputForExport(ctx context.Context, limit int64) ([]CommandOutputRecord, error) {
+	if limit < 1 || limit > 20000 {
+		limit = 5000
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	cur, err := DataCollection.Find(ctx, bson.M{}, options.Find().
+		SetSort(bson.D{{Key: "Timestamp", Value: -1}}).
+		SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []CommandOutputRecord
+	for cur.Next(ctx) {
+		var rec CommandOutputRecord
+		if err := cur.Decode(&rec); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, cur.Err()
+}
+
 // BeaconClientExists reports whether a clients document exists for ClientId.
 func BeaconClientExists(ctx context.Context, clientID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)

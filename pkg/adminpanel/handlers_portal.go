@@ -228,8 +228,8 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
 <div class="card">
   <h2>Export</h2>
   <p><a href="/api/reports/export?format=json&redact=1" download>Download JSON (redacted)</a></p>
-  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes profile secrets; protect accordingly.</p>
-  <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a></p>
+  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes profile secrets and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection).</p>
+  <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a> — clients table only; use JSON for command history.</p>
 </div>`
 	s.writeAppPage(w, user, role, "reports", "Reports", body)
 }
@@ -412,19 +412,29 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 	}
 	profiles, _ := dbconnections.ListBeaconProfiles(ctx, 500)
 	chat, _ := dbconnections.ListRecentChatMessages(ctx, 200)
+	cmdOut, errOut := dbconnections.ListRecentCommandOutputForExport(ctx, 5000)
+	if errOut != nil {
+		log.Printf("admin: report command output list: %v", errOut)
+		cmdOut = []dbconnections.CommandOutputRecord{}
+	}
+	if cmdOut == nil {
+		cmdOut = []dbconnections.CommandOutputRecord{}
+	}
 
 	type exportBundle struct {
-		GeneratedAt string                               `json:"generated_at"`
-		Clients     []dbconnections.BeaconClientDocument `json:"clients"`
-		Profiles    []dbconnections.BeaconProfile        `json:"profiles"`
-		Chat        []dbconnections.ChatMessage          `json:"operator_chat"`
+		GeneratedAt   string                               `json:"generated_at"`
+		Clients       []dbconnections.BeaconClientDocument `json:"clients"`
+		Profiles      []dbconnections.BeaconProfile        `json:"profiles"`
+		Chat          []dbconnections.ChatMessage          `json:"operator_chat"`
+		CommandOutput []dbconnections.CommandOutputRecord  `json:"command_output"`
 	}
 
 	bundle := exportBundle{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Clients:     clients,
-		Profiles:    profiles,
-		Chat:        chat,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		Clients:       clients,
+		Profiles:      profiles,
+		Chat:          chat,
+		CommandOutput: cmdOut,
 	}
 	if redact {
 		for i := range bundle.Clients {
@@ -432,6 +442,9 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		}
 		for i := range bundle.Profiles {
 			bundle.Profiles[i].Secret = "[REDACTED]"
+		}
+		for i := range bundle.CommandOutput {
+			bundle.CommandOutput[i].Output = "[REDACTED]"
 		}
 	}
 
