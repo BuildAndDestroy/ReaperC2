@@ -26,6 +26,7 @@ func NewServer() *Server {
 
 	s.router.HandleFunc("/api/beacons", s.handleCreateBeacon).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/reports/export", s.handleAPIReportsExport).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/reports/export-ghostwriter", s.handleAPIReportsExportGhostwriter).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/topology", s.handleAPITopology).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/beacon-presence", s.handleAPIBeaconPresence).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/chat/messages", s.handleAPIChatMessages).Methods(http.MethodGet, http.MethodPost)
@@ -36,6 +37,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/beacon-kill", s.handleAPIBeaconKill).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/users", s.handleAPICreateUser).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/logs/export", s.handleAPIAuditExport).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/logs/export-ghostwriter", s.handleAPIAuditExportGhostwriter).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/logs", s.handleAPIAuditLogsJSON).Methods(http.MethodGet)
 
 	s.router.HandleFunc("/beacons", s.handleBeaconsPage).Methods(http.MethodGet)

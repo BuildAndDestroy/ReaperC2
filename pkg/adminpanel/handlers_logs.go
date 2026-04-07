@@ -1,9 +1,11 @@
 package adminpanel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -53,9 +55,10 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>Audit logs</h1>
-<p class="muted">Portal and <strong>beacon</strong> events: queued commands, commands delivered on heartbeat, command output received (<code>beacon</code> actor), report exports, user creation, profile deletes, etc. Details may truncate in the table; use JSON export for full text. Admins only.</p>
+<p class="muted">Portal and <strong>beacon</strong> events: queued commands, commands delivered on heartbeat, command output received (<code>beacon</code> actor), report exports, user creation, profile deletes, etc. Details may truncate in the table; use JSON export for full text (includes <code>operator_chat</code>). Admins only.</p>
 <div class="card">
   <p><a href="/api/logs/export" download="reaperc2-audit-log.json"><strong>Download full audit log (JSON)</strong></a> — up to 50k newest entries.</p>
+  <p><a href="/api/logs/export-ghostwriter" download="reaperc2-ghostwriter.csv"><strong>Ghostwriter CSV</strong></a> — Specter Ops Ghostwriter import format (audit + beacon command results + operator chat, newest first).</p>
 </div>
 <div class="card">
   <h2>Recent (500)</h2>
@@ -76,15 +79,25 @@ func (s *Server) handleAPIAuditExport(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "failed to load audit log")
 		return
 	}
-	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionAuditLogExported, bson.M{"entry_count": len(entries)}); err != nil {
+	chat, errChat := dbconnections.ListChatMessagesForExport(ctx, 20000)
+	if errChat != nil {
+		log.Printf("admin: audit export operator chat: %v", err)
+		chat = nil
+	}
+	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionAuditLogExported, bson.M{
+		"entry_count": len(entries),
+		"chat_count":  len(chat),
+	}); err != nil {
 		log.Printf("admin: audit export self-log: %v", err)
 	}
 	out := struct {
-		ExportedAt string                      `json:"exported_at"`
-		Entries    []dbconnections.AuditLogEntry `json:"entries"`
+		ExportedAt   string                        `json:"exported_at"`
+		Entries      []dbconnections.AuditLogEntry `json:"entries"`
+		OperatorChat []dbconnections.ChatMessage   `json:"operator_chat"`
 	}{
-		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Entries:    entries,
+		ExportedAt:   time.Now().UTC().Format(time.RFC3339),
+		Entries:      entries,
+		OperatorChat: chat,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="reaperc2-audit-log.json"`)
@@ -104,4 +117,53 @@ func (s *Server) handleAPIAuditLogsJSON(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entries)
+}
+
+func (s *Server) handleAPIAuditExportGhostwriter(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAdminAPI(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	audits, err := dbconnections.ListAllAuditLogsForExport(ctx, 50000)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to load audit log")
+		return
+	}
+	data, err := dbconnections.ListRecentCommandOutputForExport(ctx, ghostwriterExportDataLimit)
+	if err != nil {
+		log.Printf("admin: ghostwriter command output rows: %v", err)
+		data = nil
+	}
+	chat, errChat := dbconnections.ListChatMessagesForExport(ctx, 20000)
+	if errChat != nil {
+		log.Printf("admin: ghostwriter operator chat: %v", err)
+		chat = nil
+	}
+	clients, errClients := dbconnections.ListBeaconClients(ctx)
+	var labelBy map[string]string
+	if errClients != nil {
+		log.Printf("admin: ghostwriter list clients for labels: %v", errClients)
+		labelBy = nil
+	} else {
+		labelBy = beaconLabelsFromClients(clients)
+	}
+	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionAuditLogExported, bson.M{
+		"format":     "ghostwriter_csv",
+		"audit_rows": len(audits),
+		"data_rows":  len(data),
+		"chat_rows":  len(chat),
+	}); err != nil {
+		log.Printf("admin: audit ghostwriter export log: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := WriteGhostwriterCSV(&buf, audits, data, chat, labelBy); err != nil {
+		log.Printf("admin: WriteGhostwriterCSV: %v", err)
+		jsonError(w, http.StatusInternalServerError, "export failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="reaperc2-ghostwriter.csv"`)
+	_, _ = io.Copy(w, &buf)
 }
