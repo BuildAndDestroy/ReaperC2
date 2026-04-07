@@ -1,10 +1,12 @@
 package adminpanel
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -228,8 +230,10 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
 <div class="card">
   <h2>Export</h2>
   <p><a href="/api/reports/export?format=json&redact=1" download>Download JSON (redacted)</a></p>
-  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes profile secrets and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection).</p>
+  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes profile secrets and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection). Operator chat is under <strong>Logs</strong> exports, not here.</p>
   <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a> — clients table only; use JSON for command history.</p>
+  <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
+  <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — same 13-column Specter Ops schema as Logs: clients, saved profiles, and beacon command output (newest first).</p>
 </div>`
 	s.writeAppPage(w, user, role, "reports", "Reports", body)
 }
@@ -411,7 +415,6 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	profiles, _ := dbconnections.ListBeaconProfiles(ctx, 500)
-	chat, _ := dbconnections.ListRecentChatMessages(ctx, 200)
 	cmdOut, errOut := dbconnections.ListRecentCommandOutputForExport(ctx, 5000)
 	if errOut != nil {
 		log.Printf("admin: report command output list: %v", errOut)
@@ -425,7 +428,6 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		GeneratedAt   string                               `json:"generated_at"`
 		Clients       []dbconnections.BeaconClientDocument `json:"clients"`
 		Profiles      []dbconnections.BeaconProfile        `json:"profiles"`
-		Chat          []dbconnections.ChatMessage          `json:"operator_chat"`
 		CommandOutput []dbconnections.CommandOutputRecord  `json:"command_output"`
 	}
 
@@ -433,7 +435,6 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
 		Clients:       clients,
 		Profiles:      profiles,
-		Chat:          chat,
 		CommandOutput: cmdOut,
 	}
 	if redact {
@@ -474,6 +475,49 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		}
 		cw.Flush()
 	}
+}
+
+func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := s.sessionUser(r)
+	if !ok {
+		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	redact := r.URL.Query().Get("redact") == "1"
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionReportExported, bson.M{
+		"format": "ghostwriter_csv", "redact": redact,
+	}); err != nil {
+		log.Printf("admin: audit report ghostwriter export: %v", err)
+	}
+
+	clients, err := dbconnections.ListBeaconClients(ctx)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "clients")
+		return
+	}
+	profiles, _ := dbconnections.ListBeaconProfiles(ctx, 500)
+	cmdOut, errOut := dbconnections.ListRecentCommandOutputForExport(ctx, 5000)
+	if errOut != nil {
+		log.Printf("admin: report ghostwriter command output: %v", errOut)
+		cmdOut = nil
+	}
+	if cmdOut == nil {
+		cmdOut = []dbconnections.CommandOutputRecord{}
+	}
+
+	snapshotAt := time.Now().UTC()
+	var buf bytes.Buffer
+	if err := WriteReportsGhostwriterCSV(&buf, clients, profiles, cmdOut, snapshotAt, redact); err != nil {
+		log.Printf("admin: WriteReportsGhostwriterCSV: %v", err)
+		jsonError(w, http.StatusInternalServerError, "export failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="reaperc2-report-ghostwriter.csv"`)
+	_, _ = io.Copy(w, &buf)
 }
 
 func (s *Server) handleAPITopology(w http.ResponseWriter, r *http.Request) {

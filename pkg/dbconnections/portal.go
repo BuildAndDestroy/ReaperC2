@@ -192,3 +192,24 @@ func ListRecentChatMessages(ctx context.Context, limit int64) ([]ChatMessage, er
 	}
 	return rev, cur.Err()
 }
+
+// ListChatMessagesForExport returns the newest chat messages first (for export merge/sort), up to limit (max 50000).
+func ListChatMessagesForExport(ctx context.Context, limit int64) ([]ChatMessage, error) {
+	if limit < 1 || limit > 50000 {
+		limit = 20000
+	}
+	cur, err := OperatorChatCollection.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []ChatMessage
+	for cur.Next(ctx) {
+		var m ChatMessage
+		if err := cur.Decode(&m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, cur.Err()
+}
