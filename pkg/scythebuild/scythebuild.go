@@ -11,17 +11,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 // HTTPOptions mirrors Scythe Http CLI flags (see ./Scythe Http -h).
 // Timeout is the HTTP client timeout (e.g. "30s"), independent of ReaperC2 heartbeat interval.
+// Headers and Directories are merged with required auth and heartbeat paths (see MergeScytheHTTPHeaders / MergeScytheHTTPDirectories).
 type HTTPOptions struct {
 	Method        string
 	Timeout       string // e.g. "5s", "2m"; default "30s"
 	Body          string
-	Directories   string // comma-separated; default /heartbeat/<clientID>,/heartbeat
-	Headers       string // comma-separated key:value; default uses client id + secret
+	Directories   string // comma-separated extra paths; always merged with /heartbeat/<clientID>,/heartbeat
+	Headers       string // comma-separated extra key:value pairs; always merged with Content-Type + X-Client-Id + X-API-Secret
 	Proxy         string
 	SkipTLSVerify bool
 }
@@ -29,6 +31,35 @@ type HTTPOptions struct {
 // DefaultHTTPOptions returns Method GET and Timeout "30s".
 func DefaultHTTPOptions() HTTPOptions {
 	return HTTPOptions{Method: "GET", Timeout: "30s"}
+}
+
+// MergeScytheHTTPHeaders returns Scythe -headers value: required C2 auth headers plus any extra pairs from userHeaders.
+// If userHeaders already looks like a full header line (includes X-API-Secret and X-Client-Id), it is used as-is so legacy copy-paste does not duplicate auth.
+func MergeScytheHTTPHeaders(clientID, secret, userHeaders string) string {
+	base := fmt.Sprintf("Content-Type:application/json,X-Client-Id:%s,X-API-Secret:%s", clientID, secret)
+	u := strings.TrimSpace(userHeaders)
+	if u == "" {
+		return base
+	}
+	// Full pasted -headers from an example (already contains auth).
+	if strings.Contains(u, "X-API-Secret:") && strings.Contains(u, "X-Client-Id:") {
+		return u
+	}
+	return base + "," + u
+}
+
+// MergeScytheHTTPDirectories returns Scythe -directories value: required heartbeat paths plus any extra paths from userDirs.
+// If userDirs already includes this client's /heartbeat/<clientID> path, it is used as-is (full pasted example).
+func MergeScytheHTTPDirectories(clientID, userDirs string) string {
+	base := fmt.Sprintf("/heartbeat/%s,/heartbeat", clientID)
+	u := strings.TrimSpace(userDirs)
+	if u == "" {
+		return base
+	}
+	if strings.Contains(u, "/heartbeat/"+clientID) {
+		return u
+	}
+	return base + "," + u
 }
 
 // BuildHTTPEmbedTokens returns argv tokens for Scythe after the program name (subcommand "Http" first).
@@ -41,14 +72,8 @@ func BuildHTTPEmbedTokens(baseURL, clientID, secret string, o HTTPOptions) []str
 	if timeout == "" {
 		timeout = "30s"
 	}
-	dirs := strings.TrimSpace(o.Directories)
-	if dirs == "" {
-		dirs = fmt.Sprintf("/heartbeat/%s,/heartbeat", clientID)
-	}
-	headers := strings.TrimSpace(o.Headers)
-	if headers == "" {
-		headers = fmt.Sprintf("Content-Type:application/json,X-Client-Id:%s,X-API-Secret:%s", clientID, secret)
-	}
+	dirs := MergeScytheHTTPDirectories(clientID, o.Directories)
+	headers := MergeScytheHTTPHeaders(clientID, secret, o.Headers)
 
 	out := []string{
 		"Http",
@@ -138,8 +163,47 @@ func firstOrPlaceholder(c []string) string {
 	return c[0]
 }
 
+// Allowed cross-compile targets for embedded Scythe (GOOS/GOARCH).
+var (
+	validEmbedGOOS   = map[string]bool{"linux": true, "windows": true, "darwin": true}
+	validEmbedGOARCH = map[string]bool{"amd64": true, "arm64": true}
+)
+
+// NormalizeEmbedTarget validates and lowercases GOOS/GOARCH. Empty values default to the build host.
+func NormalizeEmbedTarget(goos, goarch string) (string, string, error) {
+	goos = strings.ToLower(strings.TrimSpace(goos))
+	goarch = strings.ToLower(strings.TrimSpace(goarch))
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	if !validEmbedGOOS[goos] {
+		return "", "", fmt.Errorf("invalid goos %q (supported: linux, windows, darwin)", goos)
+	}
+	if !validEmbedGOARCH[goarch] {
+		return "", "", fmt.Errorf("invalid goarch %q (supported: amd64, arm64)", goarch)
+	}
+	return goos, goarch, nil
+}
+
+// SuggestedAttachmentFilename returns a download filename for the embedded binary.
+func SuggestedAttachmentFilename(clientShort, goos, goarch string) string {
+	ext := ".bin"
+	if goos == "windows" {
+		ext = ".exe"
+	}
+	return fmt.Sprintf("Scythe-embedded-%s-%s-%s%s", clientShort, goos, goarch, ext)
+}
+
 // BuildEmbeddedBinary runs go build in the Scythe tree with EmbeddedArgv set to tokens.
-func BuildEmbeddedBinary(ctx context.Context, tokens []string) ([]byte, error) {
+// goos/goarch select the target platform (cross-compilation); use "" for host OS/ARCH.
+func BuildEmbeddedBinary(ctx context.Context, tokens []string, goos, goarch string) ([]byte, error) {
+	goos, goarch, err := NormalizeEmbedTarget(goos, goarch)
+	if err != nil {
+		return nil, err
+	}
 	b64, err := EmbedArgvBase64(tokens)
 	if err != nil {
 		return nil, err
@@ -154,16 +218,22 @@ func BuildEmbeddedBinary(ctx context.Context, tokens []string) ([]byte, error) {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
-	outPath := filepath.Join(tmpDir, "Scythe.embedded")
+	outName := "Scythe.embedded"
+	if goos == "windows" {
+		outName = "Scythe.embedded.exe"
+	}
+	outPath := filepath.Join(tmpDir, outName)
 
 	ldflags := "-X github.com/BuildAndDestroy/Scythe/pkg/userinput.EmbeddedArgv=" + b64
 	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", ldflags, "-o", outPath, "./cmd")
 	cmd.Dir = root
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	env = append(env, "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+goarch)
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("go build in %s: %w\n%s", root, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("go build GOOS=%s GOARCH=%s in %s: %w\n%s", goos, goarch, root, err, strings.TrimSpace(stderr.String()))
 	}
 	return os.ReadFile(outPath)
 }

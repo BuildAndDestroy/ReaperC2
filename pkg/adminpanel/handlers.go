@@ -125,6 +125,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // scytheHTTPInput matches Scythe Http CLI flags (see ./Scythe Http -h). Empty strings use defaults in scythebuild (directories/headers generated per client).
+// Goos/Goarch select the embedded binary target (GOOS/GOARCH for go build); empty uses the ReaperC2 server host.
 type scytheHTTPInput struct {
 	Method        string `json:"method"`
 	Timeout       string `json:"timeout"` // HTTP client timeout, e.g. "30s" — independent of heartbeat_interval_sec
@@ -133,6 +134,8 @@ type scytheHTTPInput struct {
 	Headers       string `json:"headers"`
 	Proxy         string `json:"proxy"`
 	SkipTLSVerify bool   `json:"skip_tls_verify"`
+	Goos          string `json:"goos"`   // linux, windows, darwin
+	Goarch        string `json:"goarch"` // amd64, arm64
 }
 
 type createBeaconRequest struct {
@@ -224,6 +227,11 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	if hasPivot && strings.TrimSpace(httpOpts.Proxy) == "" && pivotProxy != "" {
 		httpOpts.Proxy = pivotProxy
 	}
+	embedGOOS, embedGOARCH, err := scytheEmbedTargetFromInput(req.ScytheHTTP, nil)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	tokens := scythebuild.BuildHTTPEmbedTokens(base, clientID, secret, httpOpts)
 	scythe := scythebuild.FormatCLIExample(tokens)
 	profileName := strings.TrimSpace(req.ProfileName)
@@ -245,6 +253,8 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		ScytheHTTPHeaders:       httpOpts.Headers,
 		ScytheHTTPProxy:         httpOpts.Proxy,
 		ScytheHTTPSkipTLSVerify: httpOpts.SkipTLSVerify,
+		ScytheEmbedGOOS:         embedGOOS,
+		ScytheEmbedGOARCH:       embedGOARCH,
 		ScytheExample:           scythe,
 		BeaconBaseURL:           base,
 		HeartbeatURL:            hURL,
@@ -315,6 +325,24 @@ func scytheHTTPOptionsFromInput(in *scytheHTTPInput, prof *dbconnections.BeaconP
 	return o
 }
 
+func scytheEmbedTargetFromInput(in *scytheHTTPInput, prof *dbconnections.BeaconProfile) (goos, goarch string, err error) {
+	gos := ""
+	garch := ""
+	if prof != nil {
+		gos = prof.ScytheEmbedGOOS
+		garch = prof.ScytheEmbedGOARCH
+	}
+	if in != nil {
+		if strings.TrimSpace(in.Goos) != "" {
+			gos = strings.TrimSpace(in.Goos)
+		}
+		if strings.TrimSpace(in.Goarch) != "" {
+			garch = strings.TrimSpace(in.Goarch)
+		}
+	}
+	return scythebuild.NormalizeEmbedTarget(gos, garch)
+}
+
 type scytheEmbeddedRequest struct {
 	ClientID   string           `json:"client_id"`
 	ScytheHTTP *scytheHTTPInput `json:"scythe_http,omitempty"`
@@ -371,7 +399,12 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 	}
 	base := beaconPublicBaseURL()
 	tokens := scythebuild.BuildHTTPEmbedTokens(base, doc.ClientId, doc.Secret, httpOpts)
-	bin, err := scythebuild.BuildEmbeddedBinary(ctx, tokens)
+	embedGOOS, embedGOARCH, err := scytheEmbedTargetFromInput(req.ScytheHTTP, prof)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	bin, err := scythebuild.BuildEmbeddedBinary(ctx, tokens, embedGOOS, embedGOARCH)
 	if err != nil {
 		log.Printf("admin: scythe embedded build: %v", err)
 		jsonError(w, http.StatusInternalServerError, "build failed: "+err.Error())
@@ -381,7 +414,7 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 	if len(short) > 8 {
 		short = short[:8]
 	}
-	filename := fmt.Sprintf("Scythe-embedded-%s.bin", short)
+	filename := scythebuild.SuggestedAttachmentFilename(short, embedGOOS, embedGOARCH)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, filename))
 	w.Header().Set("Content-Length", strconv.Itoa(len(bin)))
