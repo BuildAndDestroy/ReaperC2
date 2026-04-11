@@ -106,6 +106,11 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 			rows.WriteString(strconv.Itoa(p.HeartbeatIntervalSec))
 			rows.WriteString(`</div></div>`)
 		}
+		if p.ScytheEmbedGOOS != "" || p.ScytheEmbedGOARCH != "" {
+			rows.WriteString(`<div class="creds-row"><div class="creds-label">Scythe.embedded target</div><div class="mono">`)
+			rows.WriteString(template.HTMLEscapeString(p.ScytheEmbedGOOS + "/" + p.ScytheEmbedGOARCH))
+			rows.WriteString(`</div></div>`)
+		}
 		rows.WriteString(`<div class="creds-row"><div class="creds-label">Beacon base URL</div><div class="mono">`)
 		rows.WriteString(template.HTMLEscapeString(p.BeaconBaseURL))
 		rows.WriteString(`</div></div>`)
@@ -156,13 +161,24 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <input id="stimeout" value="30s" class="mono" placeholder="30s">
   <label>Request body (JSON string for <code>-body</code>; optional)</label>
   <textarea id="sbody" rows="2" class="mono" placeholder=""></textarea>
-  <label>Directories (comma-separated paths; leave blank for <code>/heartbeat/&lt;ClientId&gt;,/heartbeat</code>)</label>
-  <input id="sdirs" class="mono" placeholder="e.g. /heartbeat/uuid,/heartbeat">
-  <label>Headers (comma-separated <code>key:value</code>; leave blank for default auth headers)</label>
-  <textarea id="shdrs" rows="2" class="mono" placeholder="Content-Type:application/json,X-Client-Id:…"></textarea>
+  <label>Extra directories (comma-separated; appended after required <code>/heartbeat/&lt;ClientId&gt;,/heartbeat</code>)</label>
+  <input id="sdirs" class="mono" placeholder="e.g. /custom/path — required heartbeat paths are always included">
+  <label>Extra headers (comma-separated <code>key:value</code>; merged after required <code>Content-Type</code>, <code>X-Client-Id</code>, <code>X-API-Secret</code>)</label>
+  <textarea id="shdrs" rows="2" class="mono" placeholder="e.g. User-Agent:Mozilla/5.0… — do not repeat auth headers"></textarea>
   <label>Proxy (<code>-proxy</code>; optional; pivot proxy is applied when parent is set if this is empty)</label>
   <input id="sproxy" class="mono" placeholder="host:port">
   <label><input type="checkbox" id="stls"> Skip TLS verify (<code>-skip-tls-verify</code>)</label>
+  <label>Embedded binary: target OS (<code>GOOS</code>)</label>
+  <select id="sgoos">
+    <option value="linux" selected>Linux</option>
+    <option value="windows">Windows</option>
+    <option value="darwin">macOS (Darwin)</option>
+  </select>
+  <label>Embedded binary: architecture (<code>GOARCH</code>)</label>
+  <select id="sgoarch">
+    <option value="amd64" selected>amd64 (x86_64)</option>
+    <option value="arm64">arm64 (aarch64)</option>
+  </select>
   </details>
   <label>Profile name (optional)</label>
   <input id="pname" placeholder="Leave blank for an auto name (beacon-xxxxxxxx-YYYYMMDD-hhmmss)">
@@ -186,7 +202,9 @@ function scytheHttpPayload() {
     directories: document.getElementById('sdirs').value.trim(),
     headers: document.getElementById('shdrs').value.trim(),
     proxy: document.getElementById('sproxy').value.trim(),
-    skip_tls_verify: document.getElementById('stls').checked
+    skip_tls_verify: document.getElementById('stls').checked,
+    goos: document.getElementById('sgoos').value.trim(),
+    goarch: document.getElementById('sgoarch').value.trim()
   };
 }
 var lastClientId = null;

@@ -40,6 +40,8 @@ type BeaconProfile struct {
 	ScytheHTTPHeaders       string    `bson:"scythe_http_headers,omitempty"`
 	ScytheHTTPProxy         string    `bson:"scythe_http_proxy,omitempty"`
 	ScytheHTTPSkipTLSVerify bool      `bson:"scythe_http_skip_tls_verify,omitempty"`
+	ScytheEmbedGOOS         string    `bson:"scythe_embed_goos,omitempty"`
+	ScytheEmbedGOARCH       string    `bson:"scythe_embed_goarch,omitempty"`
 	ScytheExample           string    `bson:"scythe_example"`
 	BeaconBaseURL           string    `bson:"beacon_base_url"`
 	HeartbeatURL            string    `bson:"heartbeat_url"`
