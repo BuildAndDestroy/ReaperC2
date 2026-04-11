@@ -25,6 +25,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/logout", s.handleLogout).Methods(http.MethodPost)
 
 	s.router.HandleFunc("/api/beacons", s.handleCreateBeacon).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/beacons/scythe-embedded", s.handleAPIScytheEmbedded).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/reports/export", s.handleAPIReportsExport).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/reports/export-ghostwriter", s.handleAPIReportsExportGhostwriter).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/topology", s.handleAPITopology).Methods(http.MethodGet)

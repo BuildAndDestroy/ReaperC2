@@ -21,6 +21,14 @@ Currently only uses commands, we will need to integrate better calls
 
 [`docker-compose.yml`](docker-compose.yml) runs **MongoDB 7** and a **ReaperC2** container (beacon **8080**, admin **8443**) on a shared network. Copy [`.env.example`](.env.example) to `.env`, set passwords, then:
 
+**Before the first build**, initialize the **Scythe** git submodule (needed for **Download Scythe.embedded** on the Beacons page; the `Dockerfile` also checks that `third_party/Scythe` exists):
+
+```bash
+git submodule update --init --recursive
+```
+
+Then:
+
 ```bash
 docker compose up --build
 ```
@@ -28,6 +36,7 @@ docker compose up --build
 - Admin UI: `http://127.0.0.1:8443/login` — first operator comes from `ADMIN_BOOTSTRAP_*` in `.env` when the `operators` collection is empty.
 - MongoDB is also published on **27017** for local tools (override with `MONGO_HOST_PORT` in `.env`).
 - The app connects with the Mongo **root** user and `MONGO_AUTH_SOURCE=admin` (see [`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)); change `MONGO_USERNAME` / `MONGO_PASSWORD` / `MONGO_AUTH_SOURCE` if you switch to an application user.
+- **Scythe embedded binary:** the image is based on **`golang`** (includes `go` at runtime). `docker-compose.yml` sets `REAPERC2_ROOT=/root` so Scythe sources under `third_party/Scythe` resolve inside the container. After generating a beacon, use **Download Scythe.embedded** on the Beacons page to test the full flow.
 
 All helper scripts and the `mongoclient` image live under [`test/`](test/).
 
@@ -109,6 +118,8 @@ The process serves **two HTTP listeners**: the **beacon API** (implants / Scythe
 | `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | If **no** operators exist in MongoDB, create the first account on startup (password stored as **Argon2id**). Omit to create operators manually in the `operators` collection. |
 | `BEACON_PUBLIC_BASE_URL` | Public base URL for Scythe examples (default `http://127.0.0.1:8080`, no path). Set to your ingress URL in production. |
 | `BEACON_PIVOT_PROXY` | Optional default `host:port` for Scythe `--proxy` when the beacon has a **parent** (pivot). Per-beacon override: **Pivot proxy** field or `pivot_proxy` in the generate API. |
+| `SCYTHE_SRC` | Optional absolute path to [Scythe](https://github.com/BuildAndDestroy/Scythe) (`go.mod` + `./cmd`). If unset, ReaperC2 searches `REAPERC2_ROOT/third_party/Scythe`, then paths next to the **running binary** (covers `/root/cmd/ReaperC2` → `/root/third_party/Scythe` in Docker), then `Getwd()/third_party/Scythe`. |
+| `REAPERC2_ROOT` | Optional; if set, Scythe is `$REAPERC2_ROOT/third_party/Scythe`. Sample Docker Compose / K8s YAML sets `/root` for the default image; **not strictly required** if the binary path alone resolves correctly. |
 | `ADMIN_SESSION_TTL_HOURS` | Server-side session lifetime (default `168`). |
 | `ADMIN_COOKIE_SECURE` | Set to `true` if the admin UI is only served over HTTPS (adds `Secure` on session cookies). |
 | `ADMIN_DISABLE` | Set to `1` to run **only** the beacon listener (no admin port). |
@@ -122,7 +133,7 @@ Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Bea
 
 | Area | Purpose |
 |------|---------|
-| **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain, optional pivot proxy for Scythe). Each generation **always saves a profile** in `beacon_profiles` (custom name or auto `beacon-xxxxxxxx-YYYYMMDD-hhmmss`). List/delete saved profiles. |
+| **Beacons** | Generate clients (optional label, `ParentClientId` for pivot chain, optional pivot proxy for Scythe). **Scythe Http** options in the UI match `Http` subcommand flags (`-method`, `-timeout`, `-body`, `-directories`, `-headers`, `-proxy`, `-skip-tls-verify`); **HTTP client timeout** is separate from **phone-home interval** (seconds). **Download Scythe.embedded** runs `go build` on the vendored Scythe submodule (`third_party/Scythe`; clone with `git submodule update --init`) and streams the binary — the admin host needs **Go** installed. API: `POST /api/beacons/scythe-embedded`. Each generation **always saves a profile** in `beacon_profiles`. List/delete saved profiles. |
 | **Reports** | Download JSON or CSV exports (redacted or full). JSON includes `command_output` (recent beacon command results from the `data` collection). **Ghostwriter CSV** (`/api/reports/export-ghostwriter`) uses the same 13-column schema as Logs for clients, saved profiles, and command output—no operator chat (chat is under Logs). |
 | **Topology** | Graph of C2 → beacons (and parent → child when `ParentClientId` is set on a client). |
 | **Chat** | Operator messages stored in `operator_chat`. |

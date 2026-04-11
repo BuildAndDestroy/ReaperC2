@@ -1,0 +1,3 @@
+[submodule "third_party/Scythe"]
+	path = third_party/Scythe
+	url = https://github.com/BuildAndDestroy/Scythe.git

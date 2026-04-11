@@ -32,11 +32,19 @@ type BeaconProfile struct {
 	PivotProxy           string             `bson:"pivot_proxy,omitempty"`
 	Label                string             `bson:"label,omitempty"`
 	HeartbeatIntervalSec int                `bson:"heartbeat_interval_sec,omitempty"`
-	ScytheExample        string             `bson:"scythe_example"`
-	BeaconBaseURL        string             `bson:"beacon_base_url"`
-	HeartbeatURL         string             `bson:"heartbeat_url"`
-	CreatedAt            time.Time          `bson:"created_at"`
-	CreatedBy            string             `bson:"created_by"`
+	// Scythe HTTP client options (independent of HeartbeatIntervalSec / ExpectedHeartBeat).
+	ScytheHTTPMethod        string    `bson:"scythe_http_method,omitempty"`
+	ScytheHTTPTimeout       string    `bson:"scythe_http_timeout,omitempty"`
+	ScytheHTTPBody          string    `bson:"scythe_http_body,omitempty"`
+	ScytheHTTPDirectories   string    `bson:"scythe_http_directories,omitempty"`
+	ScytheHTTPHeaders       string    `bson:"scythe_http_headers,omitempty"`
+	ScytheHTTPProxy         string    `bson:"scythe_http_proxy,omitempty"`
+	ScytheHTTPSkipTLSVerify bool      `bson:"scythe_http_skip_tls_verify,omitempty"`
+	ScytheExample           string    `bson:"scythe_example"`
+	BeaconBaseURL           string    `bson:"beacon_base_url"`
+	HeartbeatURL            string    `bson:"heartbeat_url"`
+	CreatedAt               time.Time `bson:"created_at"`
+	CreatedBy               string    `bson:"created_by"`
 }
 
 // ChatMessage is one operator chat line.
@@ -120,6 +128,17 @@ func FindBeaconProfileByID(ctx context.Context, idHex string) (*BeaconProfile, e
 	}
 	var p BeaconProfile
 	err = BeaconProfilesCollection.FindOne(ctx, bson.M{"_id": oid}).Decode(&p)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// FindBeaconProfileByClientID returns the newest saved profile for a ClientId, if any.
+func FindBeaconProfileByClientID(ctx context.Context, clientID string) (*BeaconProfile, error) {
+	opts := options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	var p BeaconProfile
+	err := BeaconProfilesCollection.FindOne(ctx, bson.M{"client_id": clientID}, opts).Decode(&p)
 	if err != nil {
 		return nil, err
 	}

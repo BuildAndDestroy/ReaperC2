@@ -165,6 +165,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          env:
+            - name: REAPERC2_ROOT
+              value: "/root"
       imagePullSecrets:
       - name: reaperc2-myregistrykey
 ---

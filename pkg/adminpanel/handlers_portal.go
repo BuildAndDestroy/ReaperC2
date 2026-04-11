@@ -123,7 +123,9 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`</pre><button type="button" class="btn-tiny" onclick="copyBeaconField('`)
 		rows.WriteString(idScythe)
 		rows.WriteString(`')">Copy</button></div>`)
-		rows.WriteString(`</div></details><button type="button" class="btn btn-kill" data-kill="`)
+		rows.WriteString(`</div></details><button type="button" class="btn btn-secondary" data-embed="`)
+		rows.WriteString(template.HTMLEscapeString(p.ClientID))
+		rows.WriteString(`" title="Rebuild and download Scythe with this profile's saved Http options">Scythe.embedded</button><button type="button" class="btn btn-kill" data-kill="`)
 		rows.WriteString(template.HTMLEscapeString(p.ClientID))
 		rows.WriteString(`">Kill</button><button type="button" class="btn btn-secondary" data-del="`)
 		rows.WriteString(pid)
@@ -146,10 +148,27 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <input id="pivproxy" placeholder="e.g. 172.17.0.4:2222" class="mono">
   <label>Expected phone-home interval (seconds)</label>
   <input id="hbsec" type="number" min="5" max="86400" value="30" title="Green while check-ins stay within this window; yellow after a missed interval (see Topology).">
+  <details class="scythe-http" style="margin-top:1rem"><summary><strong>Scythe Http</strong> (CLI options for example command &amp; embedded build)</summary>
+  <p class="muted" style="margin:.5rem 0">HTTP <strong>timeout</strong> is separate from phone-home interval above. Defaults match <code>./Scythe Http -h</code> from <a href="https://github.com/BuildAndDestroy/Scythe" target="_blank" rel="noopener">Scythe</a>.</p>
+  <label>HTTP method</label>
+  <input id="smethod" value="GET" class="mono" placeholder="GET">
+  <label>HTTP client timeout (e.g. <code>30s</code>, <code>5s</code>, <code>2m</code>)</label>
+  <input id="stimeout" value="30s" class="mono" placeholder="30s">
+  <label>Request body (JSON string for <code>-body</code>; optional)</label>
+  <textarea id="sbody" rows="2" class="mono" placeholder=""></textarea>
+  <label>Directories (comma-separated paths; leave blank for <code>/heartbeat/&lt;ClientId&gt;,/heartbeat</code>)</label>
+  <input id="sdirs" class="mono" placeholder="e.g. /heartbeat/uuid,/heartbeat">
+  <label>Headers (comma-separated <code>key:value</code>; leave blank for default auth headers)</label>
+  <textarea id="shdrs" rows="2" class="mono" placeholder="Content-Type:application/json,X-Client-Id:…"></textarea>
+  <label>Proxy (<code>-proxy</code>; optional; pivot proxy is applied when parent is set if this is empty)</label>
+  <input id="sproxy" class="mono" placeholder="host:port">
+  <label><input type="checkbox" id="stls"> Skip TLS verify (<code>-skip-tls-verify</code>)</label>
+  </details>
   <label>Profile name (optional)</label>
   <input id="pname" placeholder="Leave blank for an auto name (beacon-xxxxxxxx-YYYYMMDD-hhmmss)">
   <p class="muted">A profile is <strong>always saved</strong> for reports and exports. Override the name above or use the default pattern.</p>
   <button type="button" class="btn" id="gen">Generate beacon</button>
+  <button type="button" class="btn btn-secondary" id="dlembed" style="display:none;margin-left:.35rem">Download Scythe.embedded</button>
   <pre id="out" style="margin-top:1rem;display:none;"></pre>
   <p class="muted" style="margin-top:.75rem;font-size:.85rem">The JSON response also appears here until you leave the page. Saved profiles keep <strong>Client ID</strong>, <strong>secret</strong>, and URLs under <strong>View credentials</strong> after refresh.</p>
   <button type="button" class="btn btn-secondary" id="reflist" style="margin-top:.35rem">Refresh profile list</button>
@@ -159,11 +178,26 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <table><thead><tr><th>Name</th><th>Client ID</th><th>Type</th><th>Created by</th><th>Actions</th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
 <script>
+function scytheHttpPayload() {
+  return {
+    method: document.getElementById('smethod').value.trim() || 'GET',
+    timeout: document.getElementById('stimeout').value.trim() || '30s',
+    body: document.getElementById('sbody').value.trim(),
+    directories: document.getElementById('sdirs').value.trim(),
+    headers: document.getElementById('shdrs').value.trim(),
+    proxy: document.getElementById('sproxy').value.trim(),
+    skip_tls_verify: document.getElementById('stls').checked
+  };
+}
+var lastClientId = null;
 document.getElementById('gen').onclick = async function() {
   var out = document.getElementById('out');
+  var dl = document.getElementById('dlembed');
   out.style.display = 'block';
   out.textContent = '…';
-  var body = { connection_type: 'HTTP', label: document.getElementById('lbl').value.trim(), parent_client_id: document.getElementById('par').value.trim() };
+  dl.style.display = 'none';
+  lastClientId = null;
+  var body = { connection_type: 'HTTP', label: document.getElementById('lbl').value.trim(), parent_client_id: document.getElementById('par').value.trim(), scythe_http: scytheHttpPayload() };
   var ppx = document.getElementById('pivproxy').value.trim();
   if (ppx) body.pivot_proxy = ppx;
   var hbn = parseInt(document.getElementById('hbsec').value, 10);
@@ -173,7 +207,47 @@ document.getElementById('gen').onclick = async function() {
   var r = await fetch('/api/beacons', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   var j = await r.json().catch(function() { return {}; });
   out.textContent = r.ok ? JSON.stringify(j, null, 2) : (j.error || r.statusText);
+  if (r.ok && j.client_id) { lastClientId = j.client_id; dl.style.display = 'inline-block'; }
 };
+async function downloadScytheEmbedded(clientId, scytheHttp) {
+  var payload = { client_id: clientId };
+  if (scytheHttp) { payload.scythe_http = scytheHttp; }
+  var r = await fetch('/api/beacons/scythe-embedded', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!r.ok) {
+    var errText = await r.text();
+    try { var ej = JSON.parse(errText); if (ej.error) errText = ej.error; } catch (e) {}
+    alert(errText || r.statusText);
+    return;
+  }
+  var blob = await r.blob();
+  var cd = r.headers.get('Content-Disposition') || '';
+  var fn = 'Scythe.embedded';
+  var m = /filename="?([^";]+)"?/.exec(cd);
+  if (m) fn = m[1];
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fn;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.body.removeChild(a);
+}
+document.getElementById('dlembed').onclick = async function() {
+  if (!lastClientId) { alert('Generate a beacon first.'); return; }
+  await downloadScytheEmbedded(lastClientId, scytheHttpPayload());
+};
+document.querySelectorAll('[data-embed]').forEach(function(btn) {
+  btn.onclick = async function() {
+    var cid = btn.getAttribute('data-embed');
+    if (!cid) return;
+    btn.disabled = true;
+    try {
+      await downloadScytheEmbedded(cid, null);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+});
 document.getElementById('reflist').onclick = function() { location.reload(); };
 function copyBeaconField(elId) {
   var el = document.getElementById(elId);
