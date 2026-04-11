@@ -21,21 +21,24 @@ Currently only uses commands, we will need to integrate better calls
 
 [`docker-compose.yml`](docker-compose.yml) runs **MongoDB 7** and a **ReaperC2** container (beacon **8080**, admin **8443**) on a shared network. Copy [`.env.example`](.env.example) to `.env`, set passwords, then:
 
-**Before the first build**, initialize the **Scythe** git submodule (needed for **Download Scythe.embedded** on the Beacons page; the `Dockerfile` also checks that `third_party/Scythe` exists):
+**Scythe submodule (`third_party/Scythe`):** for a **pinned** Scythe revision matching this repo, run `git submodule update --init --recursive` before building (or use the helper below). The **`Dockerfile`** can **clone** Scythe from GitHub during `docker build` if `third_party/Scythe` is missing—so plain `docker compose up --build` works without a manual submodule step, but the clone uses **`SCYTHE_GIT_REF`** (default **`main`**) and may differ from the submodule commit until you init the submodule or set build args.
+
+**Recommended (submodule + compose):**
 
 ```bash
-git submodule update --init --recursive
+./scripts/compose-up.sh
 ```
 
-You do **not** need to run this on every Docker or local rebuild—only when setting up a new clone, when `third_party/Scythe` is missing, or after a **git pull** that updates the submodule pointer (to sync Scythe to the commit recorded in ReaperC2). CI should run it once before `docker build`.
+This runs `git submodule update --init --recursive`, then `docker compose up --build` (passes through extra args, e.g. `-d`).
 
-After updating the Scythe submodule, **rebuild and redeploy** any **Scythe.embedded** beacons (Beacons → **Download Scythe.embedded**). The running binary embeds whatever Scythe revision was current at build time; it does not pick up upstream fixes until you build again.
-
-Then:
+**Or** without the script:
 
 ```bash
+git submodule update --init --recursive   # optional if you want pinned Scythe in the image
 docker compose up --build
 ```
+
+Set **`SCYTHE_GIT_REF`** (e.g. in `.env` or the shell) to change the branch/tag used **only** when the image build clones Scythe. After updating the Scythe submodule pointer in git, **rebuild** container images and any **Scythe.embedded** beacons you deployed earlier.
 
 - Admin UI: `http://127.0.0.1:8443/login` — first operator comes from `ADMIN_BOOTSTRAP_*` in `.env` when the `operators` collection is empty.
 - MongoDB is also published on **27017** for local tools (override with `MONGO_HOST_PORT` in `.env`).
@@ -159,6 +162,15 @@ With a pivot (parent beacon), the example adds `--proxy <host:port>` (from the f
 * If there is no authenticated user, then no access.
 
 ## Example - Kubernetes
+
+Build the same image locally or in CI (network required if the build must **clone** Scythe because the submodule was not checked out):
+
+```bash
+git submodule update --init --recursive   # recommended: embed exact Scythe commit from this repo
+docker build -t reaperc2:latest .
+```
+
+Or rely on the Dockerfile clone: `docker build -t reaperc2:latest .` (uses `SCYTHE_GIT_REF`, default `main`). Push to your registry, then point **`deployments/k8s/**`** manifests at that tag. CI should either run **`git submodule update --init --recursive`** before **`docker build`**, or set **`--build-arg SCYTHE_GIT_REF=…`** to match the Scythe revision you intend to ship.
 
 ### Requirements
 
