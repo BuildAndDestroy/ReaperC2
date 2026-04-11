@@ -27,6 +27,10 @@ Currently only uses commands, we will need to integrate better calls
 git submodule update --init --recursive
 ```
 
+You do **not** need to run this on every Docker or local rebuild—only when setting up a new clone, when `third_party/Scythe` is missing, or after a **git pull** that updates the submodule pointer (to sync Scythe to the commit recorded in ReaperC2). CI should run it once before `docker build`.
+
+After updating the Scythe submodule, **rebuild and redeploy** any **Scythe.embedded** beacons (Beacons → **Download Scythe.embedded**). The running binary embeds whatever Scythe revision was current at build time; it does not pick up upstream fixes until you build again.
+
 Then:
 
 ```bash
