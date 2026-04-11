@@ -1,5 +1,6 @@
 # Local stack: MongoDB + ReaperC2 (beacon :8080, admin :8443).
 # Usage: cp .env.example .env && docker compose up --build
+#   Or: ./scripts/compose-up.sh  (git submodule update --init first for pinned Scythe)
 # Open http://127.0.0.1:8443/login (bootstrap operator from .env on first run).
 
 services:
@@ -24,6 +25,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Passed to Dockerfile when Scythe is cloned inside the build (no submodule on disk). Default main.
+        SCYTHE_GIT_REF: ${SCYTHE_GIT_REF:-main}
     restart: unless-stopped
     depends_on:
       mongo:
@@ -42,7 +46,7 @@ services:
       BEACON_ADDR: ":8080"
       ADMIN_ADDR: ":8443"
       BEACON_PUBLIC_BASE_URL: ${BEACON_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
-      # Scythe embedded build: Go toolchain is in this image; source at /root/third_party/Scythe (submodule must exist in build context).
+      # Scythe embedded build: Go toolchain in image; sources at /root/third_party/Scythe (submodule or cloned at build).
       REAPERC2_ROOT: /root
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-changeme}
