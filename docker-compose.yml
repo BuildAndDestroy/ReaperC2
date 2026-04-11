@@ -42,6 +42,8 @@ services:
       BEACON_ADDR: ":8080"
       ADMIN_ADDR: ":8443"
       BEACON_PUBLIC_BASE_URL: ${BEACON_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
+      # Scythe embedded build: Go toolchain is in this image; source at /root/third_party/Scythe (submodule must exist in build context).
+      REAPERC2_ROOT: /root
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-changeme}
 

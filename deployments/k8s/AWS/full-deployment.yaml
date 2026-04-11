@@ -81,6 +81,8 @@ spec:
                   key: mongo-database
             - name: MONGO_TLS_CA_FILE
               value: "/etc/ssl/certs/rds-combined-ca-bundle.pem"
+            - name: REAPERC2_ROOT
+              value: "/root"
           volumeMounts:
             - name: docdb-ca-volume
               mountPath: /etc/ssl/certs/rds-combined-ca-bundle.pem

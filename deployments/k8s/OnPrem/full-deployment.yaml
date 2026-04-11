@@ -184,6 +184,8 @@ spec:
                   key: api_dp-user-password-secret
             - name: MONGO_DATABASE
               value: "api_db"
+            - name: REAPERC2_ROOT
+              value: "/root"
       imagePullSecrets:
       - name: reaperc2-myregistrykey
 ---

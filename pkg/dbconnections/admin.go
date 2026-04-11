@@ -13,7 +13,7 @@ import (
 
 const (
 	collectionOperators        = "operators"
-	collectionOperatorSessions   = "operator_sessions"
+	collectionOperatorSessions = "operator_sessions"
 )
 
 // OperatorsCollection holds admin users for the web panel.
@@ -45,13 +45,13 @@ type OperatorSession struct {
 
 // BeaconClientDocument is the shape stored in the clients collection for beacon auth.
 type BeaconClientDocument struct {
-	ClientId          string   `bson:"ClientId"`
-	Secret            string   `bson:"Secret"`
-	Active            bool     `bson:"Active"`
-	ConnectionType    string   `bson:"Connection_Type"`
+	ClientId          string `bson:"ClientId"`
+	Secret            string `bson:"Secret"`
+	Active            bool   `bson:"Active"`
+	ConnectionType    string `bson:"Connection_Type"`
 	ExpectedHeartBeat string `bson:"ExpectedHeartBeat"`
 	// HeartbeatIntervalSec is the operator-configured expected check-in period (drives topology / UI). 0 means derive from ExpectedHeartBeat.
-	HeartbeatIntervalSec int `bson:"HeartbeatIntervalSec,omitempty"`
+	HeartbeatIntervalSec int      `bson:"HeartbeatIntervalSec,omitempty"`
 	Commands             []string `bson:"Commands"`
 	// ParentClientId, if set, points to another ClientId (pivot chain toward C2).
 	ParentClientId string `bson:"ParentClientId,omitempty"`
@@ -177,4 +177,14 @@ func parseExpectedHeartbeatString(s string) int {
 func InsertBeaconClient(ctx context.Context, doc BeaconClientDocument) error {
 	_, err := ClientCollection.InsertOne(ctx, doc)
 	return err
+}
+
+// FindBeaconClientByID loads a beacon client document by ClientId.
+func FindBeaconClientByID(ctx context.Context, clientID string) (*BeaconClientDocument, error) {
+	var doc BeaconClientDocument
+	err := ClientCollection.FindOne(ctx, bson.M{"ClientId": clientID}).Decode(&doc)
+	if err != nil {
+		return nil, err
+	}
+	return &doc, nil
 }

