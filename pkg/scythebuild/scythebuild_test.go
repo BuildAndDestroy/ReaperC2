@@ -27,6 +27,40 @@ func TestResolveScytheSourceDir_SCYTHE_SRC(t *testing.T) {
 	}
 }
 
+func TestBuildHTTPEmbedTokens_SOCKS5(t *testing.T) {
+	base := "https://c2.example/"
+	cid := "11111111-1111-1111-1111-111111111111"
+	sec := "deadbeef"
+	o := HTTPOptions{Method: "GET", Timeout: "30s", Socks5Listen: true, Socks5Port: 9050}
+	tok := BuildHTTPEmbedTokens(base, cid, sec, o)
+	i := indexOf(tok, "-socks5-listen")
+	if i < 0 || i+2 >= len(tok) {
+		t.Fatalf("missing -socks5-listen / -socks5-port / port: %v", tok)
+	}
+	if tok[i+1] != "-socks5-port" || tok[i+2] != "9050" {
+		t.Fatalf("got %v", tok)
+	}
+}
+
+func indexOf(s []string, want string) int {
+	for i, x := range s {
+		if x == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestBuildHTTPEmbedTokens_NO_SOCKS5WhenInvalid(t *testing.T) {
+	o := HTTPOptions{Socks5Listen: true, Socks5Port: 0}
+	tok := BuildHTTPEmbedTokens("https://x/", "id", "sec", o)
+	for _, x := range tok {
+		if x == "-socks5-listen" {
+			t.Fatalf("should not include socks5: %v", tok)
+		}
+	}
+}
+
 func TestMergeScytheHTTPHeaders(t *testing.T) {
 	const cid = "68902a9a-e40f-4f15-a101-995800fa39b9"
 	const sec = "secrethex"

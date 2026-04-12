@@ -178,6 +178,10 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <textarea id="shdrs" rows="2" class="mono" placeholder="e.g. User-Agent:Mozilla/5.0… — do not repeat auth headers"></textarea>
   <label>Proxy (<code>-proxy</code>; optional; pivot proxy is applied when parent is set if this is empty)</label>
   <input id="sproxy" class="mono" placeholder="host:port">
+  <label><input type="checkbox" id="ssocks5"> SOCKS5 listener (<code>-socks5-listen</code> / <code>-socks5-port</code>)</label>
+  <label>SOCKS5 listen port (1–65535; e.g. 9050)</label>
+  <input id="ssocks5port" type="number" min="1" max="65535" value="9050" class="mono" title="Used when SOCKS5 listener is checked">
+  <p class="muted" style="font-size:.82rem;margin:.25rem 0 0">Embeds the same argv Scythe expects (e.g. <code>-socks5-listen</code> <code>-socks5-port</code> <code>9050</code>). Uncheck or leave port invalid to omit.</p>
   <label><input type="checkbox" id="stls"> Skip TLS verify (<code>-skip-tls-verify</code>)</label>
   <label>Embedded binary: target OS (<code>GOOS</code>)</label>
   <select id="sgoos">
@@ -218,6 +222,11 @@ function scytheHttpPayload() {
     headers: document.getElementById('shdrs').value.trim(),
     proxy: document.getElementById('sproxy').value.trim(),
     skip_tls_verify: document.getElementById('stls').checked,
+    socks5_listen: document.getElementById('ssocks5').checked,
+    socks5_port: (function() {
+      var n = parseInt(document.getElementById('ssocks5port').value, 10);
+      return isNaN(n) ? 0 : n;
+    })(),
     goos: document.getElementById('sgoos').value.trim(),
     goarch: document.getElementById('sgoarch').value.trim()
   };
