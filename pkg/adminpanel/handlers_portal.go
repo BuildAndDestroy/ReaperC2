@@ -28,11 +28,15 @@ func (s *Server) writeAppPage(w http.ResponseWriter, user, role, active, title, 
 
 func (s *Server) requireHTMLAuth(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	u, role, ok := s.sessionUser(r)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	if ok {
+		return u, role, true
+	}
+	if _, mfaOK := s.mfaPendingUsername(r); mfaOK && r.URL.Path != "/login/mfa" {
+		http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
 		return "", "", false
 	}
-	return u, role, true
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	return "", "", false
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +388,7 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
 <div class="card">
   <h2>Export</h2>
   <p><a href="/api/reports/export?format=json&redact=1" download>Download JSON (redacted)</a></p>
-  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes profile secrets and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection). Operator chat is under <strong>Logs</strong> exports, not here.</p>
+  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes an <code>engagement</code> block (name, dates, <strong>haul type</strong>), profile secrets, and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection). Operator chat is under <strong>Logs</strong> exports, not here.</p>
   <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a> — clients table only; use JSON for command history.</p>
   <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
   <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — same 13-column Specter Ops schema as Logs: clients, saved profiles, and beacon command output (newest first).</p>
@@ -590,15 +594,36 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		cmdOut = []dbconnections.CommandOutputRecord{}
 	}
 
+	type engagementExportSnapshot struct {
+		ID               string `json:"id"`
+		Name             string `json:"name"`
+		ClientName       string `json:"client_name"`
+		StartDate        string `json:"start_date"`
+		EndDate          string `json:"end_date"`
+		HaulType         string `json:"haul_type"`
+		HaulTypeLabel    string `json:"haul_type_label"`
+		SlackDiscordRoom string `json:"slack_discord_room,omitempty"`
+	}
 	type exportBundle struct {
 		GeneratedAt   string                               `json:"generated_at"`
+		Engagement    engagementExportSnapshot             `json:"engagement"`
 		Clients       []dbconnections.BeaconClientDocument `json:"clients"`
 		Profiles      []dbconnections.BeaconProfile        `json:"profiles"`
 		CommandOutput []dbconnections.CommandOutputRecord  `json:"command_output"`
 	}
-
+	ht := dbconnections.NormalizeEngagementHaulType(eng.HaulType)
 	bundle := exportBundle{
-		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Engagement: engagementExportSnapshot{
+			ID:               eng.ID.Hex(),
+			Name:             eng.Name,
+			ClientName:       eng.ClientName,
+			StartDate:        eng.StartDate.UTC().Format(time.RFC3339),
+			EndDate:          eng.EndDate.UTC().Format(time.RFC3339),
+			HaulType:         ht,
+			HaulTypeLabel:    dbconnections.EngagementHaulTypeLabel(ht),
+			SlackDiscordRoom: eng.SlackDiscordRoom,
+		},
 		Clients:       clients,
 		Profiles:      profiles,
 		CommandOutput: cmdOut,
@@ -624,7 +649,9 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", `attachment; filename="reaperc2-clients.csv"`)
 		cw := csv.NewWriter(w)
-		_ = cw.Write([]string{"ClientId", "Active", "Connection_Type", "ParentClientId", "BeaconLabel", "Secret"})
+		eh := dbconnections.NormalizeEngagementHaulType(eng.HaulType)
+		el := dbconnections.EngagementHaulTypeLabel(eh)
+		_ = cw.Write([]string{"ClientId", "Active", "Connection_Type", "ParentClientId", "BeaconLabel", "Secret", "EngagementName", "EngagementHaulType", "EngagementHaulLabel"})
 		for _, c := range clients {
 			sec := c.Secret
 			if redact {
@@ -637,6 +664,9 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 				c.ParentClientId,
 				c.BeaconLabel,
 				sec,
+				eng.Name,
+				eh,
+				el,
 			})
 		}
 		cw.Flush()
@@ -680,7 +710,7 @@ func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *htt
 
 	snapshotAt := time.Now().UTC()
 	var buf bytes.Buffer
-	if err := WriteReportsGhostwriterCSV(&buf, clients, profiles, cmdOut, snapshotAt, redact); err != nil {
+	if err := WriteReportsGhostwriterCSV(&buf, eng, clients, profiles, cmdOut, snapshotAt, redact); err != nil {
 		log.Printf("admin: WriteReportsGhostwriterCSV: %v", err)
 		jsonError(w, http.StatusInternalServerError, "export failed")
 		return

@@ -240,6 +240,12 @@ func ghostwriterUserContext(action string) string {
 		return "Operator | audit log exported"
 	case dbconnections.AuditActionUserCreated:
 		return "Admin | user created"
+	case dbconnections.AuditActionUserDisabled:
+		return "Admin | user disabled"
+	case dbconnections.AuditActionUserEnabled:
+		return "Admin | user enabled"
+	case dbconnections.AuditActionEngagementOperatorsUpdated:
+		return "Admin | engagement operators updated"
 	default:
 		return "ReaperC2 | " + action
 	}
@@ -328,8 +334,37 @@ func WriteGhostwriterCSV(w io.Writer, audits []dbconnections.AuditLogEntry, data
 	return cw.Error()
 }
 
+func engagementReportGhostwriterRow(eng *dbconnections.Engagement, snapshotAt time.Time) ghostwriterSortRow {
+	ht := dbconnections.NormalizeEngagementHaulType(eng.HaulType)
+	label := dbconnections.EngagementHaulTypeLabel(ht)
+	ts := snapshotAt.UTC().Format(time.RFC3339)
+	meta, _ := json.Marshal(map[string]interface{}{
+		"engagement_id":   eng.ID.Hex(),
+		"haul_type":       ht,
+		"haul_type_label": label,
+	})
+	desc := fmt.Sprintf("Engagement | name=%s | client=%s | haul_type=%s (%s)", eng.Name, eng.ClientName, ht, label)
+	row := []string{
+		"engagement-" + eng.ID.Hex(),
+		ts,
+		ts,
+		ghostwriterC2EndpointName,
+		ghostwriterC2EndpointName,
+		"ReaperC2",
+		"Reports | engagement context",
+		"",
+		desc,
+		"",
+		string(meta),
+		"",
+		"reaperc2,reports,engagement," + ht,
+	}
+	return ghostwriterSortRow{t: snapshotAt.Add(time.Second), row: row}
+}
+
 // WriteReportsGhostwriterCSV writes the same 13-column Ghostwriter schema from report snapshot data (clients, profiles, command output) without audit or operator chat.
-func WriteReportsGhostwriterCSV(w io.Writer, clients []dbconnections.BeaconClientDocument, profiles []dbconnections.BeaconProfile, cmdOut []dbconnections.CommandOutputRecord, snapshotAt time.Time, redact bool) error {
+// If eng is non-nil, a first row documents the engagement (including haul type) so it appears in Ghostwriter imports.
+func WriteReportsGhostwriterCSV(w io.Writer, eng *dbconnections.Engagement, clients []dbconnections.BeaconClientDocument, profiles []dbconnections.BeaconProfile, cmdOut []dbconnections.CommandOutputRecord, snapshotAt time.Time, redact bool) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write(ghostwriterCSVHeader); err != nil {
 		return err
@@ -338,6 +373,9 @@ func WriteReportsGhostwriterCSV(w io.Writer, clients []dbconnections.BeaconClien
 	labelBy := beaconLabelsFromClients(clients)
 
 	var rows []ghostwriterSortRow
+	if eng != nil {
+		rows = append(rows, engagementReportGhostwriterRow(eng, snapshotAt))
+	}
 	rows = append(rows, ghostwriterRowsFromCommandOutput(cmdOut, labelBy)...)
 
 	for _, c := range clients {

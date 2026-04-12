@@ -18,6 +18,36 @@ const (
 	EngagementStatusClosed = "closed"
 )
 
+// EngagementHaulType categorizes the operation style (reporting / planning).
+const (
+	EngagementHaulInteractive = "interactive"
+	EngagementHaulShortHaul   = "short_haul"
+	EngagementHaulLongHaul    = "long_haul"
+)
+
+// NormalizeEngagementHaulType returns a valid haul key; empty or unknown defaults to interactive.
+func NormalizeEngagementHaulType(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case EngagementHaulShortHaul, EngagementHaulLongHaul, EngagementHaulInteractive:
+		return s
+	default:
+		return EngagementHaulInteractive
+	}
+}
+
+// EngagementHaulTypeLabel is a display name for reports and UI.
+func EngagementHaulTypeLabel(key string) string {
+	switch NormalizeEngagementHaulType(key) {
+	case EngagementHaulShortHaul:
+		return "Short Haul"
+	case EngagementHaulLongHaul:
+		return "Long Haul"
+	default:
+		return "Interactive"
+	}
+}
+
 const collectionEngagements = "engagements"
 
 // EngagementsCollection stores operator-facing engagement records.
@@ -50,6 +80,8 @@ type Engagement struct {
 	Status string `bson:"status,omitempty" json:"status,omitempty"`
 	// Notes is free-form operator text (scope, reminders, handoff).
 	Notes string `bson:"notes,omitempty" json:"notes,omitempty"`
+	// HaulType is interactive | short_haul | long_haul (planning / reporting category).
+	HaulType string `bson:"haul_type,omitempty" json:"haul_type,omitempty"`
 }
 
 // InsertEngagement stores a new engagement; creator is added to AssignedOperators if missing.
@@ -73,6 +105,7 @@ func InsertEngagement(ctx context.Context, e Engagement) (primitive.ObjectID, er
 	if strings.TrimSpace(e.Status) == "" {
 		e.Status = EngagementStatusOpen
 	}
+	e.HaulType = NormalizeEngagementHaulType(e.HaulType)
 	res, err := EngagementsCollection.InsertOne(ctx, e)
 	if err != nil {
 		return primitive.NilObjectID, err
@@ -110,6 +143,38 @@ func UserCanAccessEngagement(role, username string, e *Engagement) bool {
 	return false
 }
 
+// NormalizeAssignedOperatorList trims, deduplicates, and drops empty strings.
+func NormalizeAssignedOperatorList(usernames []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, raw := range usernames {
+		u := strings.TrimSpace(raw)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	return out
+}
+
+// ValidateAssignedOperatorUsernames ensures each name exists and is not disabled.
+func ValidateAssignedOperatorUsernames(ctx context.Context, usernames []string) error {
+	for _, u := range usernames {
+		op, err := FindOperatorByUsername(ctx, u)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return fmt.Errorf("unknown operator %q", u)
+			}
+			return err
+		}
+		if OperatorIsDisabled(op) {
+			return fmt.Errorf("operator %q is disabled", u)
+		}
+	}
+	return nil
+}
+
 // ListEngagementsForUser returns engagements visible to this portal user (newest first).
 func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
 	var filter bson.M
@@ -145,8 +210,10 @@ func EngagementIsOpen(e *Engagement) bool {
 
 // EngagementPatch is a partial update for engagements.
 type EngagementPatch struct {
-	Status *string // "open" | "closed", or nil to skip
-	Notes  *string // nil = skip; empty string clears notes
+	Status             *string   // "open" | "closed", or nil to skip
+	Notes              *string   // nil = skip; empty string clears notes
+	HaulType           *string   // nil = skip; validated when set
+	AssignedOperators  *[]string // nil = skip; replaces list; each user must exist and not be disabled
 }
 
 // UpdateEngagement applies non-nil patch fields. Validates status when set.
@@ -169,6 +236,20 @@ func UpdateEngagement(ctx context.Context, idHex string, patch EngagementPatch) 
 	}
 	if patch.Notes != nil {
 		set["notes"] = *patch.Notes
+	}
+	if patch.HaulType != nil {
+		h := strings.ToLower(strings.TrimSpace(*patch.HaulType))
+		if h != EngagementHaulInteractive && h != EngagementHaulShortHaul && h != EngagementHaulLongHaul {
+			return fmt.Errorf("invalid haul_type %q (use interactive, short_haul, or long_haul)", *patch.HaulType)
+		}
+		set["haul_type"] = h
+	}
+	if patch.AssignedOperators != nil {
+		norm := NormalizeAssignedOperatorList(*patch.AssignedOperators)
+		if err := ValidateAssignedOperatorUsernames(ctx, norm); err != nil {
+			return err
+		}
+		set["assigned_operators"] = norm
 	}
 	if len(set) == 0 {
 		return nil

@@ -24,6 +24,12 @@ const (
 	AuditActionBeaconKillQueued        = "beacon_kill_queued"
 	AuditActionBeaconCommandsDelivered = "beacon_commands_delivered"
 	AuditActionBeaconOutputReceived    = "beacon_output_received"
+	AuditActionPasswordChanged         = "password_changed"
+	AuditActionTotpEnabled             = "totp_enabled"
+	AuditActionTotpDisabled            = "totp_disabled"
+	AuditActionUserDisabled              = "user_disabled"
+	AuditActionUserEnabled               = "user_enabled"
+	AuditActionEngagementOperatorsUpdated = "engagement_operators_updated"
 )
 
 // AuditLogsCollection stores operator/C2 portal audit events.

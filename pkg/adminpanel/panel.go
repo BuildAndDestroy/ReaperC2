@@ -19,6 +19,9 @@ const (
 	cookieName     = "reaperc2_admin_session"
 	cookieMaxAge   = 86400 * 7 // 7 days (browser hint; real expiry is server-side)
 	sessionIDBytes = 32
+
+	mfaCookieName   = "reaperc2_admin_mfa"
+	mfaCookieMaxAge = 600 // 10 minutes (must match MFA challenge TTL)
 )
 
 func sessionTTL() time.Duration {

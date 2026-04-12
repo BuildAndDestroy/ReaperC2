@@ -62,7 +62,12 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/engagements", http.StatusSeeOther)
 		return
 	}
-	writeHTML(w, http.StatusOK, loginPage, map[string]string{})
+	errMsg := ""
+	switch r.URL.Query().Get("err") {
+	case "mfa_expired":
+		errMsg = "Your two-factor step expired. Sign in again."
+	}
+	writeHTML(w, http.StatusOK, loginPage, map[string]string{"Error": errMsg})
 }
 
 func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +86,34 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	op, err := dbconnections.FindOperatorByUsername(ctx, user)
 	if err != nil || !VerifyOperatorPassword(op.PasswordHash, pass) {
 		writeHTML(w, http.StatusOK, loginPage, map[string]string{"Error": "Invalid username or password."})
+		return
+	}
+	if dbconnections.OperatorIsDisabled(op) {
+		writeHTML(w, http.StatusOK, loginPage, map[string]string{"Error": "This account has been disabled."})
+		return
+	}
+	if op.TotpEnabled && strings.TrimSpace(op.TotpSecret) != "" {
+		mfaTok, err := newSessionToken()
+		if err != nil {
+			http.Error(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		exp := time.Now().UTC().Add(10 * time.Minute)
+		if err := dbconnections.InsertMFAChallenge(ctx, mfaTok, op.Username, exp); err != nil {
+			log.Printf("admin: mfa challenge insert: %v", err)
+			http.Error(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     mfaCookieName,
+			Value:    mfaTok,
+			Path:     "/",
+			MaxAge:   mfaCookieMaxAge,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   adminCookieSecure(),
+		})
+		http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
 		return
 	}
 	token, err := newSessionToken()
@@ -120,8 +153,14 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		_ = dbconnections.DeleteSession(ctx, c.Value)
 	}
+	if c, err := r.Cookie(mfaCookieName); err == nil && c.Value != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		_ = dbconnections.DeleteMFAChallenge(ctx, c.Value)
+	}
 	clearEngagementCookie(w)
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
+	s.clearMFACookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 

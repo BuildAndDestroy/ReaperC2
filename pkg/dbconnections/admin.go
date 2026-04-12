@@ -34,6 +34,14 @@ type Operator struct {
 	PasswordHash string    `bson:"password_hash"`
 	Role         string    `bson:"role,omitempty"`
 	CreatedAt    time.Time `bson:"created_at"`
+	// TotpEnabled is true after the user completes TOTP enrollment (Google Authenticator, etc.).
+	TotpEnabled bool `bson:"totp_enabled,omitempty"`
+	// TotpSecret is the base32-encoded shared secret; empty when MFA is off.
+	TotpSecret string `bson:"totp_secret,omitempty"`
+	// TotpPendingSecret holds the next secret until the user confirms with a valid code.
+	TotpPendingSecret string `bson:"totp_pending_secret,omitempty"`
+	// Disabled if true: cannot sign in; existing sessions are invalidated when set.
+	Disabled bool `bson:"disabled,omitempty"`
 }
 
 // OperatorSession is a server-side session record (token is stored as _id).
@@ -75,6 +83,7 @@ func initAdminCollections(db *mongo.Database) {
 		Keys:    bson.D{{Key: "username", Value: 1}},
 		Options: options.Index().SetUnique(true),
 	})
+	initMFAChallengesCollection(db)
 	initPortalCollections(db)
 	initAuditCollections(db)
 	initFileArtifactsCollection(db)
@@ -117,6 +126,8 @@ func ListOperators(ctx context.Context) ([]Operator, error) {
 			return nil, err
 		}
 		op.PasswordHash = ""
+		op.TotpSecret = ""
+		op.TotpPendingSecret = ""
 		out = append(out, op)
 	}
 	return out, cur.Err()
@@ -145,6 +156,169 @@ func FindSessionByToken(ctx context.Context, token string) (*OperatorSession, er
 // DeleteSession removes a session by token.
 func DeleteSession(ctx context.Context, token string) error {
 	_, err := OperatorSessionsCollection.DeleteOne(ctx, bson.M{"_id": token})
+	return err
+}
+
+// DeleteSessionsForUsername removes all sessions for an operator (e.g. after disable).
+func DeleteSessionsForUsername(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err := OperatorSessionsCollection.DeleteMany(ctx, bson.M{"username": username})
+	return err
+}
+
+// OperatorIsDisabled reports whether login should be rejected (legacy docs = active).
+func OperatorIsDisabled(op *Operator) bool {
+	return op != nil && op.Disabled
+}
+
+// CountActiveAdminsExcluding returns how many non-disabled admin accounts exist besides excludeUsername.
+func CountActiveAdminsExcluding(ctx context.Context, excludeUsername string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	excludeUsername = strings.TrimSpace(excludeUsername)
+	cur, err := OperatorsCollection.Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"username": 1, "role": 1, "disabled": 1}))
+	if err != nil {
+		return 0, err
+	}
+	defer cur.Close(ctx)
+	n := 0
+	for cur.Next(ctx) {
+		var op Operator
+		if err := cur.Decode(&op); err != nil {
+			return 0, err
+		}
+		if strings.EqualFold(op.Username, excludeUsername) {
+			continue
+		}
+		if OperatorIsDisabled(&op) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(op.Role), RoleOperator) {
+			continue
+		}
+		n++
+	}
+	return n, cur.Err()
+}
+
+// SetOperatorDisabled sets disabled flag and returns mongo.ErrNoDocuments if user missing.
+func SetOperatorDisabled(ctx context.Context, username string, disabled bool) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"disabled": disabled}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
+// UpdateOperatorPasswordHash sets a new password hash for an operator.
+func UpdateOperatorPasswordHash(ctx context.Context, username, passwordHash string) error {
+	username = strings.TrimSpace(username)
+	if username == "" || passwordHash == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"password_hash": passwordHash}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
+// SetOperatorTotpPending stores a base32 secret for enrollment (not yet active).
+func SetOperatorTotpPending(ctx context.Context, username, pendingSecretBase32 string) error {
+	username = strings.TrimSpace(username)
+	if username == "" || pendingSecretBase32 == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"totp_pending_secret": pendingSecretBase32}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
+// ConfirmOperatorTotp promotes totp_pending_secret to totp_secret and enables MFA.
+func ConfirmOperatorTotp(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var op Operator
+	err := OperatorsCollection.FindOne(ctx, bson.M{"username": username}).Decode(&op)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(op.TotpPendingSecret) == "" {
+		return mongo.ErrNoDocuments
+	}
+	_, err = OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{
+		"$set": bson.M{
+			"totp_secret":  op.TotpPendingSecret,
+			"totp_enabled": true,
+		},
+		"$unset": bson.M{"totp_pending_secret": ""},
+	})
+	return err
+}
+
+// DisableOperatorTotp turns off MFA and clears secrets.
+func DisableOperatorTotp(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{
+		"$set": bson.M{"totp_enabled": false},
+		"$unset": bson.M{
+			"totp_secret":         "",
+			"totp_pending_secret": "",
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
+// ClearOperatorTotpPending abandons in-progress enrollment.
+func ClearOperatorTotpPending(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$unset": bson.M{"totp_pending_secret": ""}})
 	return err
 }
 
