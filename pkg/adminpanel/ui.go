@@ -176,6 +176,7 @@ details.cmd-fold[open] summary::before { content: "▾ "; }
   <div class="brand">ReaperC2</div>
 ` + engagementBannerHTML + `
 ` + navItem("/engagements", "Engagements", active, "engagements") + `
+` + navItem("/account", "Account", active, "account") + `
 ` + navItem("/beacons", "Beacons", active, "beacons") + `
 ` + navItem("/commands", "Commands", active, "commands") + `
 ` + navItem("/reports", "Reports", active, "reports") + `

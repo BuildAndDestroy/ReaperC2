@@ -13,6 +13,7 @@ import (
 	"ReaperC2/pkg/dbconnections"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -36,6 +37,23 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("admin: list operators for engagement form: %v", err)
 		ops = nil
+	}
+	isAdminUser := role == dbconnections.RoleAdmin
+	type opBrief struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+		Disabled bool   `json:"disabled"`
+	}
+	var opsMeta []opBrief
+	for _, o := range ops {
+		if o.Username == "" {
+			continue
+		}
+		opsMeta = append(opsMeta, opBrief{Username: o.Username, Role: o.Role, Disabled: o.Disabled})
+	}
+	opsMetaJSON, err := json.Marshal(opsMeta)
+	if err != nil {
+		opsMetaJSON = []byte("[]")
 	}
 	var rows strings.Builder
 	for _, e := range list {
@@ -63,6 +81,9 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`">`)
 		rows.WriteString(template.HTMLEscapeString(stLabel))
 		rows.WriteString(`</span></td><td>`)
+		ht := dbconnections.NormalizeEngagementHaulType(e.HaulType)
+		rows.WriteString(template.HTMLEscapeString(dbconnections.EngagementHaulTypeLabel(ht)))
+		rows.WriteString(`</td><td>`)
 		rows.WriteString(template.HTMLEscapeString(strings.Join(e.AssignedOperators, ", ")))
 		rows.WriteString(`</td><td style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-tiny" data-open="`)
 		rows.WriteString(template.HTMLEscapeString(id))
@@ -71,11 +92,11 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`">Manage</button></td></tr>`)
 	}
 	if rows.Len() == 0 {
-		rows.WriteString(`<tr><td colspan="7" class="muted">No engagements yet — create one below.</td></tr>`)
+		rows.WriteString(`<tr><td colspan="8" class="muted">No engagements yet — create one below.</td></tr>`)
 	}
 	var opChecks strings.Builder
 	for _, o := range ops {
-		if o.Username == "" {
+		if o.Username == "" || dbconnections.OperatorIsDisabled(&o) {
 			continue
 		}
 		opChecks.WriteString(`<label style="display:block;margin:.35rem 0"><input type="checkbox" name="op" value="`)
@@ -91,10 +112,10 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `
 <h1>Engagements</h1>
-<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets open/closed and notes (shown in the banner when closed).</p>
+<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, notes, and (for administrators) <strong>assigned operators</strong>. Closed engagements show a banner pill.</p>
 <div class="card">
   <h2>Your engagements</h2>
-  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Status</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
+  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Status</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
 <dialog id="engManageDlg" class="eng-manage-dialog">
   <h2>Manage engagement</h2>
@@ -104,9 +125,20 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
     <option value="open">Open</option>
     <option value="closed">Closed</option>
   </select>
+  <label for="engDlgHaul">Haul type</label>
+  <select id="engDlgHaul">
+    <option value="interactive">Interactive</option>
+    <option value="short_haul">Short Haul</option>
+    <option value="long_haul">Long Haul</option>
+  </select>
   <label for="engDlgNotes">Notes</label>
   <p class="muted" style="font-size:.82rem;margin:.35rem 0 0">Internal reminders, scope, handoff — not shown to beacons.</p>
   <textarea id="engDlgNotes" placeholder="e.g. pivot rules, reporting window, customer contacts…"></textarea>
+  <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
+    <label>Assigned operators</label>
+    <p class="muted" style="font-size:.82rem;margin:.25rem 0 .35rem">Administrators only: choose which operators can open this workspace. Admins always have access.</p>
+    <div id="engDlgOpChecks" style="margin-top:.35rem"></div>
+  </div>
   <p id="engDlgMsg" class="cmd-inline-msg muted"></p>
   <div class="dlg-actions">
     <button type="button" class="btn" id="engDlgSave">Save</button>
@@ -123,6 +155,13 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <input id="enStart" type="date">
   <label>End date</label>
   <input id="enEnd" type="date">
+  <label>Haul type</label>
+  <select id="enHaul">
+    <option value="interactive">Interactive</option>
+    <option value="short_haul">Short Haul</option>
+    <option value="long_haul">Long Haul</option>
+  </select>
+  <p class="muted" style="font-size:.82rem;margin:.25rem 0 0">Used for engagement planning and included in report exports.</p>
   <label>Slack / Discord room name</label>
   <input id="enRoom" placeholder="e.g. #acme-2026-ops — used as chat room key">
   <label>Notes (optional)</label>
@@ -138,8 +177,41 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 .eng-st-closed { color: #8b949e; font-weight: 600; font-size: .85rem; }
 </style>
 <script>
+window.__REAPER_IS_ADMIN__ = ` + map[bool]string{true: "true", false: "false"}[isAdminUser] + `;
+window.ENG_OPS_META = ` + string(opsMetaJSON) + `;
 var engDlgId = null;
 var dlg = document.getElementById('engManageDlg');
+function buildEngDlgOps(j) {
+  var sec = document.getElementById('engDlgOpsSection');
+  var box = document.getElementById('engDlgOpChecks');
+  if (!box || !sec) return;
+  box.innerHTML = '';
+  if (!window.__REAPER_IS_ADMIN__) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  var assigned = {};
+  if (j.assigned_operators && j.assigned_operators.length) {
+    j.assigned_operators.forEach(function(u) { assigned[u] = true; });
+  }
+  (window.ENG_OPS_META || []).forEach(function(op) {
+    if (op.disabled) return;
+    var lab = document.createElement('label');
+    lab.style.display = 'block';
+    lab.style.margin = '.35rem 0';
+    var inp = document.createElement('input');
+    inp.type = 'checkbox';
+    inp.value = op.username;
+    if (assigned[op.username]) inp.checked = true;
+    lab.appendChild(inp);
+    lab.appendChild(document.createTextNode(' ' + op.username));
+    if (op.role) {
+      var sp = document.createElement('span');
+      sp.className = 'muted';
+      sp.textContent = ' (' + op.role + ')';
+      lab.appendChild(sp);
+    }
+    box.appendChild(lab);
+  });
+}
 document.querySelectorAll('[data-open]').forEach(function(btn) {
   btn.onclick = async function() {
     var id = btn.getAttribute('data-open');
@@ -157,7 +229,11 @@ document.querySelectorAll('[data-manage]').forEach(function(btn) {
     if (!r.ok) { alert((j && j.error) ? j.error : r.statusText); return; }
     document.getElementById('engDlgSubtitle').textContent = (j.name || '') + ' · ' + (j.client_name || '');
     document.getElementById('engDlgStatus').value = (j.status === 'closed') ? 'closed' : 'open';
+    var haul = j.haul_type || 'interactive';
+    if (haul !== 'short_haul' && haul !== 'long_haul') haul = 'interactive';
+    document.getElementById('engDlgHaul').value = haul;
     document.getElementById('engDlgNotes').value = j.notes || '';
+    buildEngDlgOps(j);
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
   };
 });
@@ -168,8 +244,14 @@ document.getElementById('engDlgSave').onclick = async function() {
   msg.textContent = 'Saving…';
   var body = {
     status: document.getElementById('engDlgStatus').value,
+    haul_type: document.getElementById('engDlgHaul').value,
     notes: document.getElementById('engDlgNotes').value
   };
+  if (window.__REAPER_IS_ADMIN__) {
+    var aops = [];
+    document.querySelectorAll('#engDlgOpChecks input[type=checkbox]:checked').forEach(function(c) { aops.push(c.value); });
+    body.assigned_operators = aops;
+  }
   var r = await fetch('/api/engagements/' + encodeURIComponent(engDlgId), {
     method: 'PATCH',
     credentials: 'same-origin',
@@ -196,7 +278,7 @@ document.getElementById('enCreate').onclick = async function() {
   var ops = [];
   document.querySelectorAll('#opChecks input[type=checkbox]:checked').forEach(function(c) { ops.push(c.value); });
   el.textContent = 'Saving…';
-  var r = await fetch('/api/engagements', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, client_name: client, start_date: sd, end_date: ed, slack_discord_room: room, assigned_operators: ops, notes: notes }) });
+  var r = await fetch('/api/engagements', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, client_name: client, start_date: sd, end_date: ed, haul_type: document.getElementById('enHaul').value, slack_discord_room: room, assigned_operators: ops, notes: notes }) });
   var j = await r.json().catch(function() { return {}; });
   if (r.ok && j.id) {
     el.textContent = 'Created. Opening…';
@@ -215,6 +297,7 @@ type createEngagementAPI struct {
 	ClientName        string   `json:"client_name"`
 	StartDate         string   `json:"start_date"`
 	EndDate           string   `json:"end_date"`
+	HaulType          string   `json:"haul_type"`
 	SlackDiscordRoom  string   `json:"slack_discord_room"`
 	AssignedOperators []string `json:"assigned_operators"`
 	Notes             string   `json:"notes"`
@@ -295,11 +378,17 @@ func (s *Server) handleAPIEngagementsCreate(w http.ResponseWriter, r *http.Reque
 			assign = append(assign, user)
 		}
 	}
+	assign = dbconnections.NormalizeAssignedOperatorList(assign)
+	if err := dbconnections.ValidateAssignedOperatorUsernames(ctx, assign); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	id, err := dbconnections.InsertEngagement(ctx, dbconnections.Engagement{
 		Name:              req.Name,
 		ClientName:        req.ClientName,
 		StartDate:         start,
 		EndDate:           end,
+		HaulType:          dbconnections.NormalizeEngagementHaulType(req.HaulType),
 		SlackDiscordRoom:  strings.TrimSpace(req.SlackDiscordRoom),
 		AssignedOperators: assign,
 		CreatedBy:         user,
@@ -336,6 +425,7 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 		SlackDiscordRoom  string   `json:"slack_discord_room,omitempty"`
 		AssignedOperators []string `json:"assigned_operators"`
 		Status            string   `json:"status"`
+		HaulType          string   `json:"haul_type"`
 	}
 	var out []row
 	for _, e := range list {
@@ -343,6 +433,7 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 		if st == "" {
 			st = dbconnections.EngagementStatusOpen
 		}
+		ht := dbconnections.NormalizeEngagementHaulType(e.HaulType)
 		out = append(out, row{
 			ID:                e.ID.Hex(),
 			Name:              e.Name,
@@ -352,6 +443,7 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 			SlackDiscordRoom:  e.SlackDiscordRoom,
 			AssignedOperators: e.AssignedOperators,
 			Status:            st,
+			HaulType:          ht,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -401,6 +493,7 @@ func engagementAPIMap(e *dbconnections.Engagement) map[string]interface{} {
 	if st == "" {
 		st = dbconnections.EngagementStatusOpen
 	}
+	ht := dbconnections.NormalizeEngagementHaulType(e.HaulType)
 	return map[string]interface{}{
 		"id":                 e.ID.Hex(),
 		"name":               e.Name,
@@ -410,6 +503,8 @@ func engagementAPIMap(e *dbconnections.Engagement) map[string]interface{} {
 		"slack_discord_room": e.SlackDiscordRoom,
 		"assigned_operators": e.AssignedOperators,
 		"status":             st,
+		"haul_type":          ht,
+		"haul_type_label":    dbconnections.EngagementHaulTypeLabel(ht),
 		"notes":              e.Notes,
 		"created_at":         e.CreatedAt.UTC().Format(time.RFC3339),
 		"created_by":         e.CreatedBy,
@@ -452,8 +547,10 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(engagementAPIMap(e))
 	case http.MethodPatch:
 		var req struct {
-			Status *string `json:"status"`
-			Notes  *string `json:"notes"`
+			Status              *string   `json:"status"`
+			Notes               *string   `json:"notes"`
+			HaulType            *string   `json:"haul_type"`
+			AssignedOperators   *[]string `json:"assigned_operators"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, http.StatusBadRequest, "invalid json")
@@ -471,7 +568,18 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 			}
 			patch.Notes = req.Notes
 		}
-		if patch.Status == nil && patch.Notes == nil {
+		if req.HaulType != nil {
+			h := strings.TrimSpace(*req.HaulType)
+			patch.HaulType = &h
+		}
+		if req.AssignedOperators != nil {
+			if !isAdmin(role) {
+				jsonError(w, http.StatusForbidden, "only administrators can change assigned operators")
+				return
+			}
+			patch.AssignedOperators = req.AssignedOperators
+		}
+		if patch.Status == nil && patch.Notes == nil && patch.HaulType == nil && patch.AssignedOperators == nil {
 			jsonError(w, http.StatusBadRequest, "no changes")
 			return
 		}
@@ -480,13 +588,22 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 				jsonError(w, http.StatusNotFound, "engagement not found")
 				return
 			}
-			if strings.Contains(err.Error(), "invalid engagement status") {
+			if strings.Contains(err.Error(), "invalid engagement status") || strings.Contains(err.Error(), "invalid haul_type") ||
+				strings.Contains(err.Error(), "unknown operator") || strings.Contains(err.Error(), "is disabled") {
 				jsonError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			log.Printf("admin: update engagement %s: %v", idHex, err)
 			jsonError(w, http.StatusInternalServerError, "failed to update")
 			return
+		}
+		if req.AssignedOperators != nil && isAdmin(role) {
+			if aerr := dbconnections.InsertAuditLog(ctx, user, dbconnections.AuditActionEngagementOperatorsUpdated, bson.M{
+				"engagement_id": idHex,
+				"operators":     *req.AssignedOperators,
+			}, idHex); aerr != nil {
+				log.Printf("admin: audit engagement ops: %v", aerr)
+			}
 		}
 		e2, err := dbconnections.FindEngagementByID(ctx, idHex)
 		if err != nil {

@@ -22,7 +22,17 @@ func NewServer() *Server {
 	s.router.HandleFunc("/health", s.handleHealth).Methods(http.MethodGet)
 	s.router.HandleFunc("/login", s.handleLoginPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/login", s.handleLoginPost).Methods(http.MethodPost)
+	s.router.HandleFunc("/login/mfa", s.handleLoginMFAPage).Methods(http.MethodGet)
+	s.router.HandleFunc("/login/mfa", s.handleLoginMFAPost).Methods(http.MethodPost)
 	s.router.HandleFunc("/logout", s.handleLogout).Methods(http.MethodPost)
+
+	s.router.HandleFunc("/account", s.handleAccountPage).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/account", s.handleAPIAccountGET).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/account/password", s.handleAPIAccountPasswordPOST).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/account/totp/begin", s.handleAPIAccountTotpBegin).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/account/totp/verify", s.handleAPIAccountTotpVerify).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/account/totp/disable", s.handleAPIAccountTotpDisable).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/account/totp/cancel", s.handleAPIAccountTotpCancel).Methods(http.MethodPost)
 
 	s.router.HandleFunc("/engagements", s.handleEngagementsPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/engagements", s.handleAPIEngagements).Methods(http.MethodGet, http.MethodPost)
@@ -45,6 +55,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/beacon-artifacts/{id}", s.handleAPIBeaconArtifactDelete).Methods(http.MethodDelete)
 	s.router.HandleFunc("/api/beacon-command-output", s.handleAPIBeaconCommandOutput).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/beacon-kill", s.handleAPIBeaconKill).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/users/{username}", s.handleAPIUserByUsername).Methods(http.MethodPatch)
 	s.router.HandleFunc("/api/users", s.handleAPICreateUser).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/logs/export", s.handleAPIAuditExport).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/logs/export-ghostwriter", s.handleAPIAuditExportGhostwriter).Methods(http.MethodGet)
@@ -85,6 +96,10 @@ func (s *Server) sessionUser(r *http.Request) (username, role string, ok bool) {
 	}
 	op, err := dbconnections.FindOperatorByUsername(ctx, sess.Username)
 	if err != nil {
+		return "", "", false
+	}
+	if dbconnections.OperatorIsDisabled(op) {
+		_ = dbconnections.DeleteSession(ctx, c.Value)
 		return "", "", false
 	}
 	return op.Username, effectivePortalRole(op), true

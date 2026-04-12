@@ -3,6 +3,7 @@ package adminpanel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"ReaperC2/pkg/dbconnections"
 
+	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -58,21 +60,42 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 	var rows strings.Builder
 	for _, op := range ops {
 		rn := effectivePortalRole(&op)
+		st := "Active"
+		if dbconnections.OperatorIsDisabled(&op) {
+			st = "Disabled"
+		}
 		rows.WriteString("<tr><td>")
 		rows.WriteString(template.HTMLEscapeString(op.Username))
 		rows.WriteString("</td><td>")
 		rows.WriteString(template.HTMLEscapeString(rn))
 		rows.WriteString("</td><td>")
+		rows.WriteString(template.HTMLEscapeString(st))
+		rows.WriteString("</td><td>")
 		rows.WriteString(template.HTMLEscapeString(op.CreatedAt.UTC().Format(time.RFC3339)))
+		rows.WriteString(`</td><td style="white-space:nowrap">`)
+		if op.Username != u {
+			if dbconnections.OperatorIsDisabled(&op) {
+				rows.WriteString(`<button type="button" class="btn btn-secondary btn-tiny" data-enable="`)
+				rows.WriteString(template.HTMLEscapeString(op.Username))
+				rows.WriteString(`">Enable</button>`)
+			} else {
+				rows.WriteString(`<button type="button" class="btn btn-kill btn-tiny" data-disable="`)
+				rows.WriteString(template.HTMLEscapeString(op.Username))
+				rows.WriteString(`">Disable</button>`)
+			}
+		} else {
+			rows.WriteString(`<span class="muted">—</span>`)
+		}
 		rows.WriteString("</td></tr>")
 	}
 	if rows.Len() == 0 {
-		rows.WriteString("<tr><td colspan=\"3\" class=\"muted\">No users.</td></tr>")
+		rows.WriteString("<tr><td colspan=\"5\" class=\"muted\">No users.</td></tr>")
 	}
 
+	selfQuoted, _ := json.Marshal(u)
 	body := `
 <h1>Users</h1>
-<p class="muted">Create portal accounts. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
+<p class="muted">Create portal accounts. <strong>Disabled</strong> users cannot sign in; their sessions end immediately. You cannot disable yourself. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
 <div class="card">
   <h2>Create user</h2>
   <label>Username</label>
@@ -91,9 +114,10 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 </div>
 <div class="card">
   <h2>Accounts</h2>
-  <table><thead><tr><th>Username</th><th>Role</th><th>Created</th></tr></thead><tbody>` + rows.String() + `</tbody></table>
+  <table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
 <script>
+window.__USERS_SELF__ = ` + string(selfQuoted) + `;
 document.getElementById('createu').onclick = async function() {
   var out = document.getElementById('uout');
   out.style.display = 'block';
@@ -107,6 +131,32 @@ document.getElementById('createu').onclick = async function() {
   out.textContent = r.ok ? JSON.stringify(j, null, 2) : (j.error || r.statusText);
 };
 document.getElementById('refusers').onclick = function() { location.reload(); };
+async function patchUser(username, disabled) {
+  var r = await fetch('/api/users/' + encodeURIComponent(username), {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled: disabled })
+  });
+  var j = await r.json().catch(function() { return {}; });
+  if (!r.ok) { alert(j.error || r.statusText); return; }
+  location.reload();
+}
+document.querySelectorAll('[data-disable]').forEach(function(btn) {
+  btn.onclick = function() {
+    var name = btn.getAttribute('data-disable');
+    if (!name || name === window.__USERS_SELF__) return;
+    if (!confirm('Disable ' + name + '? They will be signed out and cannot log in until re-enabled.')) return;
+    patchUser(name, true);
+  };
+});
+document.querySelectorAll('[data-enable]').forEach(function(btn) {
+  btn.onclick = function() {
+    var name = btn.getAttribute('data-enable');
+    if (!name) return;
+    patchUser(name, false);
+  };
+});
 </script>`
 	s.writeAppPage(w, u, role, "users", "Users", body, nil)
 }
@@ -180,6 +230,78 @@ func (s *Server) handleAPICreateUser(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "username": req.Username, "role": role})
 }
 
+func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	adminUser, ok := s.requireAdminAPI(w, r)
+	if !ok {
+		return
+	}
+	target := strings.TrimSpace(mux.Vars(r)["username"])
+	if target == "" {
+		jsonError(w, http.StatusBadRequest, "username required")
+		return
+	}
+	if strings.EqualFold(target, adminUser) {
+		jsonError(w, http.StatusBadRequest, "cannot change your own account here")
+		return
+	}
+	var req struct {
+		Disabled *bool `json:"disabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.Disabled == nil {
+		jsonError(w, http.StatusBadRequest, "no changes")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	targetOp, err := dbconnections.FindOperatorByUsername(ctx, target)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			jsonError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if *req.Disabled && isAdmin(effectivePortalRole(targetOp)) {
+		n, err := dbconnections.CountActiveAdminsExcluding(ctx, target)
+		if err != nil {
+			log.Printf("admin: count active admins: %v", err)
+			jsonError(w, http.StatusInternalServerError, "failed")
+			return
+		}
+		if n == 0 {
+			jsonError(w, http.StatusBadRequest, "cannot disable the last active administrator")
+			return
+		}
+	}
+	if err := dbconnections.SetOperatorDisabled(ctx, target, *req.Disabled); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			jsonError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "failed to update user")
+		return
+	}
+	_ = dbconnections.DeleteSessionsForUsername(ctx, target)
+	_ = dbconnections.DeleteMFAChallengesForUser(ctx, target)
+	action := dbconnections.AuditActionUserEnabled
+	if *req.Disabled {
+		action = dbconnections.AuditActionUserDisabled
+	}
+	if aerr := dbconnections.InsertAuditLog(ctx, adminUser, action, bson.M{"target_username": target}, ""); aerr != nil {
+		log.Printf("admin: audit user enable/disable: %v", aerr)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "username": target, "disabled": *req.Disabled})
+}
 
 func isValidUsername(s string) bool {
 	for _, r := range s {

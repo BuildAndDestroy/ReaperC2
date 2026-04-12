@@ -105,7 +105,8 @@ func engagementBannerFragment(eng *dbconnections.Engagement) string {
 	if !dbconnections.EngagementIsOpen(eng) {
 		closed = ` <span class="eng-closed-pill" title="Marked closed on Engagements page">Closed</span>`
 	}
-	return `<div class="engagement-bar">` + closed + `<span class="muted">Engagement</span> · <strong>` + name + `</strong> · <span class="muted">` + client + `</span> · <a href="/engagements">Switch engagement</a></div>`
+	haul := template.HTMLEscapeString(dbconnections.EngagementHaulTypeLabel(eng.HaulType))
+	return `<div class="engagement-bar">` + closed + `<span class="muted">Engagement</span> · <strong>` + name + `</strong> · <span class="muted">` + client + `</span> · <span class="muted">` + haul + `</span> · <a href="/engagements">Switch engagement</a></div>`
 }
 
 func engagementScriptFragment(eng *dbconnections.Engagement) string {
