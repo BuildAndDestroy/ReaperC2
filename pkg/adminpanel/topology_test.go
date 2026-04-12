@@ -24,16 +24,16 @@ func TestBuildTopologyGraph_DirectAndPivot(t *testing.T) {
 func TestBeaconTopoStatus_Intervals(t *testing.T) {
 	ts := time.Now().UTC().Add(-20 * time.Second)
 	doc := dbconnections.BeaconClientDocument{
-		HeartbeatIntervalSec: 30,
-		LastSeenAt:            &ts,
+		HeartbeatIntervalSec: 60,
+		LastSeenAt:           &ts,
 	}
 	if beaconTopoStatus(doc, time.Now()) != topoStatusOK {
 		t.Fatalf("expected ok when age < interval")
 	}
 	doc2 := doc
-	ts2 := time.Now().UTC().Add(-45 * time.Second)
+	ts2 := time.Now().UTC().Add(-90 * time.Second)
 	doc2.LastSeenAt = &ts2
 	if beaconTopoStatus(doc2, time.Now()) != topoStatusLate {
-		t.Fatalf("expected late when between 1x and 3x interval (30s hb, 45s ago)")
+		t.Fatalf("expected late when between 1x and 3x interval (60s hb, 90s ago)")
 	}
 }

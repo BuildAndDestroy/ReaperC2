@@ -59,7 +59,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, _, ok := s.sessionUser(r); ok {
-		http.Redirect(w, r, "/beacons", http.StatusSeeOther)
+		http.Redirect(w, r, "/engagements", http.StatusSeeOther)
 		return
 	}
 	writeHTML(w, http.StatusOK, loginPage, map[string]string{})
@@ -107,7 +107,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   adminCookieSecure(),
 	})
-	http.Redirect(w, r, "/beacons", http.StatusSeeOther)
+	http.Redirect(w, r, "/engagements", http.StatusSeeOther)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +120,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		_ = dbconnections.DeleteSession(ctx, c.Value)
 	}
+	clearEngagementCookie(w)
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -144,10 +145,12 @@ type createBeaconRequest struct {
 	Label          string `json:"label"`
 	// PivotProxy is host:port for Scythe --proxy when ParentClientId is set (e.g. 172.17.0.4:2222). Falls back to BEACON_PIVOT_PROXY.
 	PivotProxy string `json:"pivot_proxy,omitempty"`
-	// HeartbeatIntervalSec expected seconds between phone-homes (topology green/yellow/gray). Default 30.
+	// HeartbeatIntervalSec expected seconds between phone-homes (topology green/yellow/gray). Default 60.
 	HeartbeatIntervalSec int `json:"heartbeat_interval_sec"`
 	// ProfileName optional; if empty, server assigns a time-based name (profile is always saved).
 	ProfileName string `json:"profile_name"`
+	// BeaconBaseURL optional C2 origin for Scythe examples and embedded URL (http/https, FQDN or IP, optional port). Empty uses BEACON_PUBLIC_BASE_URL.
+	BeaconBaseURL string `json:"beacon_base_url,omitempty"`
 	// ScytheHTTP optional; HTTP timeout defaults to 30s if unset (not tied to heartbeat).
 	ScytheHTTP *scytheHTTPInput `json:"scythe_http,omitempty"`
 }
@@ -167,9 +170,13 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	user, _, ok := s.sessionUser(r)
+	user, role, ok := s.sessionUser(r)
 	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
 		return
 	}
 	var req createBeaconRequest
@@ -182,7 +189,7 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	}
 	hbSec := req.HeartbeatIntervalSec
 	if hbSec <= 0 {
-		hbSec = 30
+		hbSec = 60
 	}
 	if hbSec < 5 {
 		hbSec = 5
@@ -205,18 +212,34 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		ConnectionType:       req.ConnectionType,
 		HeartbeatIntervalSec: hbSec,
 		ExpectedHeartBeat:    fmt.Sprintf("%ds", hbSec),
-		Commands:             []string{},
+		Commands:             []interface{}{},
 		ParentClientId:       strings.TrimSpace(req.ParentClientId),
 		BeaconLabel:          strings.TrimSpace(req.Label),
+		EngagementId:         eng.ID.Hex(),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+	if pid := strings.TrimSpace(doc.ParentClientId); pid != "" {
+		parent, err := dbconnections.FindBeaconClientByID(ctx, pid)
+		if err != nil || parent == nil {
+			jsonError(w, http.StatusBadRequest, "parent beacon not found")
+			return
+		}
+		if parent.EngagementId != eng.ID.Hex() {
+			jsonError(w, http.StatusBadRequest, "parent beacon belongs to a different engagement")
+			return
+		}
+	}
 	if err := dbconnections.InsertBeaconClient(ctx, doc); err != nil {
 		log.Printf("admin: insert beacon: %v", err)
 		jsonError(w, http.StatusInternalServerError, "failed to create client")
 		return
 	}
-	base := beaconPublicBaseURL()
+	base, err := ResolveBeaconBaseURL(req.BeaconBaseURL)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	hURL := fmt.Sprintf("%s/heartbeat/%s", base, clientID)
 	hasPivot := strings.TrimSpace(doc.ParentClientId) != ""
 	pivotProxy := strings.TrimSpace(req.PivotProxy)
@@ -241,6 +264,7 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 	_, profErr := dbconnections.InsertBeaconProfile(ctx, dbconnections.BeaconProfile{
 		Name:                    profileName,
 		ClientID:                clientID,
+		EngagementID:            eng.ID.Hex(),
 		Secret:                  secret,
 		ConnectionType:          req.ConnectionType,
 		ParentClientID:          doc.ParentClientId,
@@ -270,7 +294,7 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		"connection_type":        req.ConnectionType,
 		"heartbeat_interval_sec": hbSec,
 		"profile_saved_ok":       profErr == nil,
-	}); aerr != nil {
+	}, eng.ID.Hex()); aerr != nil {
 		log.Printf("admin: audit log: %v", aerr)
 	}
 	resp := createBeaconResponse{
@@ -353,8 +377,13 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if _, _, ok := s.sessionUser(r); !ok {
+	user, role, ok := s.sessionUser(r)
+	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
 		return
 	}
 	var req scytheEmbeddedRequest
@@ -379,6 +408,10 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 		jsonError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
+	if !clientBelongsToEngagement(ctx, req.ClientID, eng.ID.Hex()) {
+		jsonError(w, http.StatusForbidden, "beacon is not in this engagement")
+		return
+	}
 	var prof *dbconnections.BeaconProfile
 	if p, err := dbconnections.FindBeaconProfileByClientID(ctx, req.ClientID); err == nil {
 		prof = p
@@ -398,6 +431,9 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	base := beaconPublicBaseURL()
+	if prof != nil && strings.TrimSpace(prof.BeaconBaseURL) != "" {
+		base = strings.TrimRight(strings.TrimSpace(prof.BeaconBaseURL), "/")
+	}
 	tokens := scythebuild.BuildHTTPEmbedTokens(base, doc.ClientId, doc.Secret, httpOpts)
 	embedGOOS, embedGOARCH, err := scytheEmbedTargetFromInput(req.ScytheHTTP, prof)
 	if err != nil {

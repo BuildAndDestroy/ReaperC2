@@ -24,6 +24,11 @@ func NewServer() *Server {
 	s.router.HandleFunc("/login", s.handleLoginPost).Methods(http.MethodPost)
 	s.router.HandleFunc("/logout", s.handleLogout).Methods(http.MethodPost)
 
+	s.router.HandleFunc("/engagements", s.handleEngagementsPage).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/engagements", s.handleAPIEngagements).Methods(http.MethodGet, http.MethodPost)
+	s.router.HandleFunc("/api/engagements/active", s.handleAPIEngagementsActivePOST).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/engagements/{id}", s.handleAPIEngagementByID).Methods(http.MethodGet, http.MethodPatch)
+
 	s.router.HandleFunc("/api/beacons", s.handleCreateBeacon).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/beacons/scythe-embedded", s.handleAPIScytheEmbedded).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/reports/export", s.handleAPIReportsExport).Methods(http.MethodGet)
@@ -34,11 +39,17 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/beacon-profiles", s.handleAPIBeaconProfiles).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/beacon-profiles/{id}", s.handleAPIBeaconProfileDelete).Methods(http.MethodDelete)
 	s.router.HandleFunc("/api/beacon-commands", s.handleAPIBeaconCommands).Methods(http.MethodGet, http.MethodPost)
+	s.router.HandleFunc("/api/beacon-staging", s.handleAPIBeaconStaging).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/beacon-artifacts", s.handleAPIBeaconArtifacts).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/beacon-artifacts/{id}/file", s.handleAPIBeaconArtifactFile).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/beacon-artifacts/{id}", s.handleAPIBeaconArtifactDelete).Methods(http.MethodDelete)
 	s.router.HandleFunc("/api/beacon-command-output", s.handleAPIBeaconCommandOutput).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/beacon-kill", s.handleAPIBeaconKill).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/users", s.handleAPICreateUser).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/logs/export", s.handleAPIAuditExport).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/logs/export-ghostwriter", s.handleAPIAuditExportGhostwriter).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/logs/engagement/export", s.handleAPIAuditExportEngagement).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/logs/engagement", s.handleAPIAuditLogsEngagementJSON).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/logs", s.handleAPIAuditLogsJSON).Methods(http.MethodGet)
 
 	s.router.HandleFunc("/beacons", s.handleBeaconsPage).Methods(http.MethodGet)
@@ -48,6 +59,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/chat", s.handleChatPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/users", s.handleUsersPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/logs", s.handleLogsPage).Methods(http.MethodGet)
+	s.router.HandleFunc("/engagement/logs", s.handleEngagementLogsPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/", s.handleRoot).Methods(http.MethodGet)
 
 	return s
