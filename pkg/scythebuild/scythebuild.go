@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,9 @@ type HTTPOptions struct {
 	Headers       string // comma-separated extra key:value pairs; always merged with Content-Type + X-Client-Id + X-API-Secret
 	Proxy         string
 	SkipTLSVerify bool
+	// Socks5Listen enables embedded Scythe SOCKS5 listener (-socks5-listen -socks5-port <port>).
+	Socks5Listen bool
+	Socks5Port   int // 1–65535 when Socks5Listen is true
 }
 
 // DefaultHTTPOptions returns Method GET and Timeout "30s".
@@ -91,6 +95,9 @@ func BuildHTTPEmbedTokens(baseURL, clientID, secret string, o HTTPOptions) []str
 	}
 	if o.SkipTLSVerify {
 		out = append(out, "-skip-tls-verify")
+	}
+	if o.Socks5Listen && o.Socks5Port >= 1 && o.Socks5Port <= 65535 {
+		out = append(out, "-socks5-listen", "-socks5-port", strconv.Itoa(o.Socks5Port))
 	}
 	return out
 }

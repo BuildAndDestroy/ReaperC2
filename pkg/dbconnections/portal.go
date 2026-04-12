@@ -39,7 +39,9 @@ type BeaconProfile struct {
 	ScytheHTTPDirectories   string    `bson:"scythe_http_directories,omitempty"`
 	ScytheHTTPHeaders       string    `bson:"scythe_http_headers,omitempty"`
 	ScytheHTTPProxy         string    `bson:"scythe_http_proxy,omitempty"`
-	ScytheHTTPSkipTLSVerify bool      `bson:"scythe_http_skip_tls_verify,omitempty"`
+	ScytheHTTPSkipTLSVerify bool `bson:"scythe_http_skip_tls_verify,omitempty"`
+	ScytheHTTPSocks5Listen  bool `bson:"scythe_http_socks5_listen,omitempty"`
+	ScytheHTTPSocks5Port    int  `bson:"scythe_http_socks5_port,omitempty"`
 	ScytheEmbedGOOS         string    `bson:"scythe_embed_goos,omitempty"`
 	ScytheEmbedGOARCH       string    `bson:"scythe_embed_goarch,omitempty"`
 	ScytheExample           string    `bson:"scythe_example"`

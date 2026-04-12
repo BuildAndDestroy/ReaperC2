@@ -174,6 +174,8 @@ type scytheHTTPInput struct {
 	Headers       string `json:"headers"`
 	Proxy         string `json:"proxy"`
 	SkipTLSVerify bool   `json:"skip_tls_verify"`
+	Socks5Listen  bool   `json:"socks5_listen"`
+	Socks5Port    int    `json:"socks5_port"`
 	Goos          string `json:"goos"`   // linux, windows, darwin
 	Goarch        string `json:"goarch"` // amd64, arm64
 }
@@ -274,6 +276,13 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "failed to create client")
 		return
 	}
+	if req.ScytheHTTP != nil && req.ScytheHTTP.Socks5Listen {
+		p := req.ScytheHTTP.Socks5Port
+		if p < 1 || p > 65535 {
+			jsonError(w, http.StatusBadRequest, "socks5_port must be between 1 and 65535 when socks5_listen is true")
+			return
+		}
+	}
 	base, err := ResolveBeaconBaseURL(req.BeaconBaseURL)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
@@ -316,6 +325,8 @@ func (s *Server) handleCreateBeacon(w http.ResponseWriter, r *http.Request) {
 		ScytheHTTPHeaders:       httpOpts.Headers,
 		ScytheHTTPProxy:         httpOpts.Proxy,
 		ScytheHTTPSkipTLSVerify: httpOpts.SkipTLSVerify,
+		ScytheHTTPSocks5Listen:  httpOpts.Socks5Listen,
+		ScytheHTTPSocks5Port:    httpOpts.Socks5Port,
 		ScytheEmbedGOOS:         embedGOOS,
 		ScytheEmbedGOARCH:       embedGOARCH,
 		ScytheExample:           scythe,
@@ -363,6 +374,8 @@ func scytheHTTPOptionsFromInput(in *scytheHTTPInput, prof *dbconnections.BeaconP
 		o.Headers = prof.ScytheHTTPHeaders
 		o.Proxy = prof.ScytheHTTPProxy
 		o.SkipTLSVerify = prof.ScytheHTTPSkipTLSVerify
+		o.Socks5Listen = prof.ScytheHTTPSocks5Listen
+		o.Socks5Port = prof.ScytheHTTPSocks5Port
 	}
 	if in != nil {
 		if in.Method != "" {
@@ -378,6 +391,8 @@ func scytheHTTPOptionsFromInput(in *scytheHTTPInput, prof *dbconnections.BeaconP
 			o.Proxy = in.Proxy
 		}
 		o.SkipTLSVerify = in.SkipTLSVerify
+		o.Socks5Listen = in.Socks5Listen
+		o.Socks5Port = in.Socks5Port
 	}
 	if o.Method == "" {
 		o.Method = "GET"
@@ -450,6 +465,13 @@ func (s *Server) handleAPIScytheEmbedded(w http.ResponseWriter, r *http.Request)
 	if !clientBelongsToEngagement(ctx, req.ClientID, eng.ID.Hex()) {
 		jsonError(w, http.StatusForbidden, "beacon is not in this engagement")
 		return
+	}
+	if req.ScytheHTTP != nil && req.ScytheHTTP.Socks5Listen {
+		p := req.ScytheHTTP.Socks5Port
+		if p < 1 || p > 65535 {
+			jsonError(w, http.StatusBadRequest, "socks5_port must be between 1 and 65535 when socks5_listen is true")
+			return
+		}
 	}
 	var prof *dbconnections.BeaconProfile
 	if p, err := dbconnections.FindBeaconProfileByClientID(ctx, req.ClientID); err == nil {
