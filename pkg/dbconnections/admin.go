@@ -52,13 +52,16 @@ type BeaconClientDocument struct {
 	ExpectedHeartBeat string `bson:"ExpectedHeartBeat"`
 	// HeartbeatIntervalSec is the operator-configured expected check-in period (drives topology / UI). 0 means derive from ExpectedHeartBeat.
 	HeartbeatIntervalSec int      `bson:"HeartbeatIntervalSec,omitempty"`
-	Commands             []string `bson:"Commands"`
+	// Commands are delivered on heartbeat as a JSON array: strings (shell/builtins) or JSON objects (Scythe HTTP file upload/download maps).
+	Commands []interface{} `bson:"Commands"`
 	// ParentClientId, if set, points to another ClientId (pivot chain toward C2).
 	ParentClientId string `bson:"ParentClientId,omitempty"`
 	// BeaconLabel is a display name for topology / reports.
 	BeaconLabel string `bson:"BeaconLabel,omitempty"`
 	// LastSeenAt is updated when the beacon checks in (heartbeat or result post).
 	LastSeenAt *time.Time `bson:"LastSeenAt,omitempty"`
+	// EngagementId links this beacon to an engagement (hex ObjectId string); empty for legacy rows.
+	EngagementId string `bson:"EngagementId,omitempty"`
 }
 
 func initAdminCollections(db *mongo.Database) {
@@ -74,6 +77,8 @@ func initAdminCollections(db *mongo.Database) {
 	})
 	initPortalCollections(db)
 	initAuditCollections(db)
+	initFileArtifactsCollection(db)
+	initEngagementsCollection(db)
 }
 
 // CountOperators returns how many operator accounts exist.
@@ -143,7 +148,7 @@ func DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
-// BeaconHeartbeatIntervalSec returns the expected check-in period in seconds (minimum 1, default 30).
+// BeaconHeartbeatIntervalSec returns the expected check-in period in seconds (minimum 1, default 60).
 func BeaconHeartbeatIntervalSec(c BeaconClientDocument) int {
 	if c.HeartbeatIntervalSec > 0 {
 		return clampHeartbeatSec(c.HeartbeatIntervalSec)
@@ -153,7 +158,7 @@ func BeaconHeartbeatIntervalSec(c BeaconClientDocument) int {
 
 func clampHeartbeatSec(n int) int {
 	if n < 1 {
-		return 30
+		return 60
 	}
 	if n > 86400 {
 		return 86400
@@ -164,11 +169,11 @@ func clampHeartbeatSec(n int) int {
 func parseExpectedHeartbeatString(s string) int {
 	s = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(s), "s"))
 	if s == "" {
-		return 30
+		return 60
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return 30
+		return 60
 	}
 	return clampHeartbeatSec(n)
 }

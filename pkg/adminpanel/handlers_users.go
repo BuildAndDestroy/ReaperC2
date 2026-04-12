@@ -72,7 +72,7 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>Users</h1>
-<p class="muted">Create portal accounts. <strong>Admin</strong> may manage users; <strong>Operator</strong> may use beacons, commands, reports, topology, and chat only.</p>
+<p class="muted">Create portal accounts. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
 <div class="card">
   <h2>Create user</h2>
   <label>Username</label>
@@ -108,7 +108,7 @@ document.getElementById('createu').onclick = async function() {
 };
 document.getElementById('refusers').onclick = function() { location.reload(); };
 </script>`
-	s.writeAppPage(w, u, role, "users", "Users", body)
+	s.writeAppPage(w, u, role, "users", "Users", body, nil)
 }
 
 type createUserRequest struct {
@@ -173,7 +173,7 @@ func (s *Server) handleAPICreateUser(w http.ResponseWriter, r *http.Request) {
 	if aerr := dbconnections.InsertAuditLog(ctx, adminUser, dbconnections.AuditActionUserCreated, bson.M{
 		"new_username": req.Username,
 		"new_role":     role,
-	}); aerr != nil {
+	}, ""); aerr != nil {
 		log.Printf("admin: audit user create: %v", aerr)
 	}
 	w.Header().Set("Content-Type", "application/json")

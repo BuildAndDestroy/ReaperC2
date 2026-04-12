@@ -20,10 +20,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (s *Server) writeAppPage(w http.ResponseWriter, user, role, active, title, bodyHTML string) {
+func (s *Server) writeAppPage(w http.ResponseWriter, user, role, active, title, bodyHTML string, eng *dbconnections.Engagement) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(layoutHTML(user, role, active, title, bodyHTML)))
+	_, _ = w.Write([]byte(layoutHTML(user, role, active, title, bodyHTML, engagementBannerFragment(eng), engagementScriptFragment(eng))))
 }
 
 func (s *Server) requireHTMLAuth(w http.ResponseWriter, r *http.Request) (string, string, bool) {
@@ -40,7 +40,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/beacons", http.StatusSeeOther)
+	http.Redirect(w, r, "/engagements", http.StatusSeeOther)
 }
 
 func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
@@ -48,9 +48,13 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	eng, ok := s.requireActiveEngagement(w, r, user, role)
+	if !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	profiles, err := dbconnections.ListBeaconProfiles(ctx, 100)
+	profiles, err := dbconnections.ListBeaconProfilesByEngagement(ctx, eng.ID.Hex(), 100)
 	if err != nil {
 		log.Printf("admin: list profiles: %v", err)
 		http.Error(w, "failed to load profiles", http.StatusInternalServerError)
@@ -151,8 +155,11 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <input id="par" placeholder="UUID of upstream beacon" class="mono">
   <label>Pivot proxy host:port (optional; used in Scythe <code>--proxy</code> when parent is set; or set env <code>BEACON_PIVOT_PROXY</code>)</label>
   <input id="pivproxy" placeholder="e.g. 172.17.0.4:2222" class="mono">
+  <label>Beacon C2 base URL (optional)</label>
+  <input id="beaconBase" type="text" class="mono" placeholder="https://c2.example.com:8443 or 10.0.0.5:8080" autocomplete="off">
+  <p class="muted" style="font-size:.85rem;margin:.35rem 0 0">Where Scythe calls the beacon API (<code>-url</code> / embedded). Use <code>http</code> or <code>https</code>, FQDN or IP, optional port. Leave blank for <code>BEACON_PUBLIC_BASE_URL</code> (default <code>http://127.0.0.1:8080</code>).</p>
   <label>Expected phone-home interval (seconds)</label>
-  <input id="hbsec" type="number" min="5" max="86400" value="30" title="Green while check-ins stay within this window; yellow after a missed interval (see Topology).">
+  <input id="hbsec" type="number" min="5" max="86400" value="60" title="Green while check-ins stay within this window; yellow after a missed interval (see Topology).">
   <details class="scythe-http" style="margin-top:1rem"><summary><strong>Scythe Http</strong> (CLI options for example command &amp; embedded build)</summary>
   <p class="muted" style="margin:.5rem 0">HTTP <strong>timeout</strong> is separate from phone-home interval above. Defaults match <code>./Scythe Http -h</code> from <a href="https://github.com/BuildAndDestroy/Scythe" target="_blank" rel="noopener">Scythe</a>.</p>
   <label>HTTP method</label>
@@ -185,6 +192,10 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <p class="muted">A profile is <strong>always saved</strong> for reports and exports. Override the name above or use the default pattern.</p>
   <button type="button" class="btn" id="gen">Generate beacon</button>
   <button type="button" class="btn btn-secondary" id="dlembed" style="display:none;margin-left:.35rem">Download Scythe.embedded</button>
+  <div id="embedDlWrap" style="display:none;margin-top:.75rem;max-width:520px">
+    <p id="embedProgLbl" class="muted" style="margin:0 0 .35rem;font-size:.9rem"></p>
+    <progress id="embedProg" max="100" style="width:100%;height:1.25rem;vertical-align:middle"></progress>
+  </div>
   <pre id="out" style="margin-top:1rem;display:none;"></pre>
   <p class="muted" style="margin-top:.75rem;font-size:.85rem">The JSON response also appears here until you leave the page. Saved profiles keep <strong>Client ID</strong>, <strong>secret</strong>, and URLs under <strong>View credentials</strong> after refresh.</p>
   <button type="button" class="btn btn-secondary" id="reflist" style="margin-top:.35rem">Refresh profile list</button>
@@ -222,33 +233,85 @@ document.getElementById('gen').onclick = async function() {
   if (!isNaN(hbn) && hbn >= 5) body.heartbeat_interval_sec = hbn;
   var pn = document.getElementById('pname').value.trim();
   if (pn) body.profile_name = pn;
+  var bb = document.getElementById('beaconBase').value.trim();
+  if (bb) body.beacon_base_url = bb;
   var r = await fetch('/api/beacons', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   var j = await r.json().catch(function() { return {}; });
   out.textContent = r.ok ? JSON.stringify(j, null, 2) : (j.error || r.statusText);
   if (r.ok && j.client_id) { lastClientId = j.client_id; dl.style.display = 'inline-block'; }
 };
 async function downloadScytheEmbedded(clientId, scytheHttp) {
+  var wrap = document.getElementById('embedDlWrap');
+  var prog = document.getElementById('embedProg');
+  var lbl = document.getElementById('embedProgLbl');
+  function showIndeterminate(msg) {
+    wrap.style.display = 'block';
+    lbl.textContent = msg;
+    prog.removeAttribute('value');
+    prog.setAttribute('max', '100');
+  }
+  function hideProgress() {
+    wrap.style.display = 'none';
+  }
+  function setEmbedButtonsDisabled(dis) {
+    var dle = document.getElementById('dlembed');
+    if (dle) dle.disabled = !!dis;
+    document.querySelectorAll('[data-embed]').forEach(function(b) { b.disabled = !!dis; });
+  }
   var payload = { client_id: clientId };
   if (scytheHttp) { payload.scythe_http = scytheHttp; }
-  var r = await fetch('/api/beacons/scythe-embedded', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (!r.ok) {
-    var errText = await r.text();
-    try { var ej = JSON.parse(errText); if (ej.error) errText = ej.error; } catch (e) {}
-    alert(errText || r.statusText);
-    return;
+  showIndeterminate('Building Scythe.embedded — compiling on server (often 30s–2m)…');
+  setEmbedButtonsDisabled(true);
+  try {
+    var r = await fetch('/api/beacons/scythe-embedded', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) {
+      hideProgress();
+      var errText = await r.text();
+      try { var ej = JSON.parse(errText); if (ej.error) errText = ej.error; } catch (e2) {}
+      alert(errText || r.statusText);
+      return;
+    }
+    var lenHdr = r.headers.get('Content-Length');
+    var total = lenHdr ? parseInt(lenHdr, 10) : 0;
+    var reader = r.body.getReader();
+    var chunks = [];
+    var received = 0;
+    if (total > 0) {
+      prog.setAttribute('max', String(total));
+      prog.value = 0;
+      lbl.textContent = 'Downloading… 0%';
+    } else {
+      lbl.textContent = 'Receiving file…';
+    }
+    while (true) {
+      var step = await reader.read();
+      if (step.done) break;
+      chunks.push(step.value);
+      received += step.value.length;
+      if (total > 0) {
+        prog.value = received;
+        lbl.textContent = 'Downloading… ' + Math.min(100, Math.round(100 * received / total)) + '% (' + received + ' / ' + total + ' bytes)';
+      }
+    }
+    hideProgress();
+    var blob = new Blob(chunks);
+    var cd = r.headers.get('Content-Disposition') || '';
+    var fn = 'Scythe.embedded';
+    var m = /filename="?([^";]+)"?/.exec(cd);
+    if (m) fn = m[1];
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fn;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+  } catch (e) {
+    hideProgress();
+    alert('Download failed: ' + e);
+  } finally {
+    setEmbedButtonsDisabled(false);
   }
-  var blob = await r.blob();
-  var cd = r.headers.get('Content-Disposition') || '';
-  var fn = 'Scythe.embedded';
-  var m = /filename="?([^";]+)"?/.exec(cd);
-  if (m) fn = m[1];
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = fn;
-  document.body.appendChild(a);
-  a.click();
-  URL.revokeObjectURL(a.href);
-  document.body.removeChild(a);
 }
 document.getElementById('dlembed').onclick = async function() {
   if (!lastClientId) { alert('Generate a beacon first.'); return; }
@@ -258,12 +321,7 @@ document.querySelectorAll('[data-embed]').forEach(function(btn) {
   btn.onclick = async function() {
     var cid = btn.getAttribute('data-embed');
     if (!cid) return;
-    btn.disabled = true;
-    try {
-      await downloadScytheEmbedded(cid, null);
-    } finally {
-      btn.disabled = false;
-    }
+    await downloadScytheEmbedded(cid, null);
   };
 });
 document.getElementById('reflist').onclick = function() { location.reload(); };
@@ -308,11 +366,15 @@ document.querySelectorAll('[data-del]').forEach(function(btn) {
   };
 });
 </script>`
-	s.writeAppPage(w, user, role, "beacons", "Beacons", body)
+	s.writeAppPage(w, user, role, "beacons", "Beacons", body, eng)
 }
 
 func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
 	user, role, ok := s.requireHTMLAuth(w, r)
+	if !ok {
+		return
+	}
+	eng, ok := s.requireActiveEngagement(w, r, user, role)
 	if !ok {
 		return
 	}
@@ -327,11 +389,15 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
   <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
   <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — same 13-column Specter Ops schema as Logs: clients, saved profiles, and beacon command output (newest first).</p>
 </div>`
-	s.writeAppPage(w, user, role, "reports", "Reports", body)
+	s.writeAppPage(w, user, role, "reports", "Reports", body, eng)
 }
 
 func (s *Server) handleTopologyPage(w http.ResponseWriter, r *http.Request) {
 	user, role, ok := s.requireHTMLAuth(w, r)
+	if !ok {
+		return
+	}
+	eng, ok := s.requireActiveEngagement(w, r, user, role)
 	if !ok {
 		return
 	}
@@ -424,7 +490,7 @@ function renderTopology(g) {
   setInterval(load, 5000);
 })();
 </script>`
-	s.writeAppPage(w, user, role, "topology", "Topology", body)
+	s.writeAppPage(w, user, role, "topology", "Topology", body, eng)
 }
 
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
@@ -432,9 +498,13 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	eng, ok := s.requireActiveEngagement(w, r, user, role)
+	if !ok {
+		return
+	}
 	body := `
 <h1>Operator chat</h1>
-<p class="muted">Shared channel for all signed-in operators (stored in MongoDB).</p>
+<p class="muted">Channel for this engagement (room name from the engagement, or a stable internal id). Stored in MongoDB.</p>
 <div class="card">
   <div id="chat-log" class="chat-log"></div>
   <label>Message</label>
@@ -475,15 +545,19 @@ document.getElementById('send').onclick = async function() {
 setInterval(poll, 2500);
 poll();
 </script>`
-	s.writeAppPage(w, user, role, "chat", "Chat", body)
+	s.writeAppPage(w, user, role, "chat", "Chat", body, eng)
 }
 
 // --- APIs ---
 
 func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) {
-	actor, _, ok := s.sessionUser(r)
+	actor, role, ok := s.sessionUser(r)
 	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, actor, role)
+	if !ok {
 		return
 	}
 	format := r.URL.Query().Get("format")
@@ -496,18 +570,18 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 
 	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionReportExported, bson.M{
-		"format": format, "redact": redact,
-	}); err != nil {
+		"format": format, "redact": redact, "engagement_id": eng.ID.Hex(),
+	}, eng.ID.Hex()); err != nil {
 		log.Printf("admin: audit report export: %v", err)
 	}
 
-	clients, err := dbconnections.ListBeaconClients(ctx)
+	clients, err := dbconnections.ListBeaconClientsByEngagement(ctx, eng.ID.Hex())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "clients")
 		return
 	}
-	profiles, _ := dbconnections.ListBeaconProfiles(ctx, 500)
-	cmdOut, errOut := dbconnections.ListRecentCommandOutputForExport(ctx, 5000)
+	profiles, _ := dbconnections.ListBeaconProfilesByEngagement(ctx, eng.ID.Hex(), 500)
+	cmdOut, errOut := dbconnections.ListRecentCommandOutputForEngagement(ctx, eng.ID.Hex(), 5000)
 	if errOut != nil {
 		log.Printf("admin: report command output list: %v", errOut)
 		cmdOut = []dbconnections.CommandOutputRecord{}
@@ -570,9 +644,13 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *http.Request) {
-	actor, _, ok := s.sessionUser(r)
+	actor, role, ok := s.sessionUser(r)
 	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, actor, role)
+	if !ok {
 		return
 	}
 	redact := r.URL.Query().Get("redact") == "1"
@@ -580,18 +658,18 @@ func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *htt
 	defer cancel()
 
 	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionReportExported, bson.M{
-		"format": "ghostwriter_csv", "redact": redact,
-	}); err != nil {
+		"format": "ghostwriter_csv", "redact": redact, "engagement_id": eng.ID.Hex(),
+	}, eng.ID.Hex()); err != nil {
 		log.Printf("admin: audit report ghostwriter export: %v", err)
 	}
 
-	clients, err := dbconnections.ListBeaconClients(ctx)
+	clients, err := dbconnections.ListBeaconClientsByEngagement(ctx, eng.ID.Hex())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "clients")
 		return
 	}
-	profiles, _ := dbconnections.ListBeaconProfiles(ctx, 500)
-	cmdOut, errOut := dbconnections.ListRecentCommandOutputForExport(ctx, 5000)
+	profiles, _ := dbconnections.ListBeaconProfilesByEngagement(ctx, eng.ID.Hex(), 500)
+	cmdOut, errOut := dbconnections.ListRecentCommandOutputForEngagement(ctx, eng.ID.Hex(), 5000)
 	if errOut != nil {
 		log.Printf("admin: report ghostwriter command output: %v", errOut)
 		cmdOut = nil
@@ -613,13 +691,18 @@ func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) handleAPITopology(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := s.sessionUser(r); !ok {
+	user, role, ok := s.sessionUser(r)
+	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	clients, err := dbconnections.ListBeaconClients(ctx)
+	clients, err := dbconnections.ListBeaconClientsByEngagement(ctx, eng.ID.Hex())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed")
 		return
@@ -630,13 +713,18 @@ func (s *Server) handleAPITopology(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIBeaconPresence(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := s.sessionUser(r); !ok {
+	user, role, ok := s.sessionUser(r)
+	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	clients, err := dbconnections.ListBeaconClients(ctx)
+	clients, err := dbconnections.ListBeaconClientsByEngagement(ctx, eng.ID.Hex())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed")
 		return
@@ -682,13 +770,19 @@ func (s *Server) handleAPIChatMessages(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		if _, _, ok := s.sessionUser(r); !ok {
+		user, role, ok := s.sessionUser(r)
+		if !ok {
 			jsonError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		eng, ok := s.engagementForAPI(w, r, user, role)
+		if !ok {
+			return
+		}
+		room := engagementChatRoom(eng)
 		sinceQ := r.URL.Query().Get("since")
 		if sinceQ == "" {
-			msgs, err := dbconnections.ListRecentChatMessages(ctx, 100)
+			msgs, err := dbconnections.ListRecentChatMessagesForRoom(ctx, room, 100)
 			if err != nil {
 				jsonError(w, http.StatusInternalServerError, "chat")
 				return
@@ -705,7 +799,7 @@ func (s *Server) handleAPIChatMessages(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "bad since")
 			return
 		}
-		msgs, err := dbconnections.ListChatMessagesSince(ctx, since, 200)
+		msgs, err := dbconnections.ListChatMessagesSinceForRoom(ctx, room, since, 200)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "chat")
 			return
@@ -713,9 +807,13 @@ func (s *Server) handleAPIChatMessages(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(msgsForJSON(msgs))
 	case http.MethodPost:
-		user, _, ok := s.sessionUser(r)
+		user, role, ok := s.sessionUser(r)
 		if !ok {
 			jsonError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		eng, ok := s.engagementForAPI(w, r, user, role)
+		if !ok {
 			return
 		}
 		var req struct {
@@ -725,7 +823,7 @@ func (s *Server) handleAPIChatMessages(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "body required")
 			return
 		}
-		m := dbconnections.ChatMessage{Username: user, Body: strings.TrimSpace(req.Body)}
+		m := dbconnections.ChatMessage{Room: engagementChatRoom(eng), Username: user, Body: strings.TrimSpace(req.Body)}
 		if err := dbconnections.InsertChatMessage(ctx, m); err != nil {
 			log.Printf("admin: chat insert: %v", err)
 			jsonError(w, http.StatusInternalServerError, "failed")
@@ -761,13 +859,18 @@ func (s *Server) handleAPIBeaconProfiles(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if _, _, ok := s.sessionUser(r); !ok {
+	user, role, ok := s.sessionUser(r)
+	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	list, err := dbconnections.ListBeaconProfiles(ctx, 200)
+	list, err := dbconnections.ListBeaconProfilesByEngagement(ctx, eng.ID.Hex(), 200)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed")
 		return
@@ -777,9 +880,13 @@ func (s *Server) handleAPIBeaconProfiles(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAPIBeaconProfileDelete(w http.ResponseWriter, r *http.Request) {
-	actor, _, ok := s.sessionUser(r)
+	actor, role, ok := s.sessionUser(r)
 	if !ok {
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, actor, role)
+	if !ok {
 		return
 	}
 	id := mux.Vars(r)["id"]
@@ -792,6 +899,14 @@ func (s *Server) handleAPIBeaconProfileDelete(w http.ResponseWriter, r *http.Req
 		} else {
 			jsonError(w, http.StatusBadRequest, "bad id")
 		}
+		return
+	}
+	if prof.EngagementID != "" && prof.EngagementID != eng.ID.Hex() {
+		jsonError(w, http.StatusForbidden, "profile belongs to another engagement")
+		return
+	}
+	if prof.EngagementID == "" && !clientBelongsToEngagement(ctx, prof.ClientID, eng.ID.Hex()) {
+		jsonError(w, http.StatusForbidden, "profile not in this engagement")
 		return
 	}
 	if err := dbconnections.DeleteBeaconClient(ctx, prof.ClientID); err != nil {
@@ -807,7 +922,7 @@ func (s *Server) handleAPIBeaconProfileDelete(w http.ResponseWriter, r *http.Req
 	if err := dbconnections.InsertAuditLog(ctx, actor, dbconnections.AuditActionBeaconProfileDel, bson.M{
 		"profile_id": id,
 		"client_id":  prof.ClientID,
-	}); err != nil {
+	}, eng.ID.Hex()); err != nil {
 		log.Printf("admin: audit profile delete: %v", err)
 	}
 	w.WriteHeader(http.StatusNoContent)

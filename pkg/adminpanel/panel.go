@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +32,32 @@ func sessionTTL() time.Duration {
 
 func beaconPublicBaseURL() string {
 	return strings.TrimRight(getEnvDefault("BEACON_PUBLIC_BASE_URL", "http://127.0.0.1:8080"), "/")
+}
+
+// ResolveBeaconBaseURL normalizes operator input for the beacon C2 base URL (scheme + host [:port] only).
+// Empty input uses BEACON_PUBLIC_BASE_URL (see beaconPublicBaseURL). Accepts full URLs or host:port / FQDN / IP with optional port.
+func ResolveBeaconBaseURL(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return beaconPublicBaseURL(), nil
+	}
+	raw := input
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid beacon base URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("beacon base URL must use http or https")
+	}
+	if strings.TrimSpace(u.Host) == "" {
+		return "", fmt.Errorf("beacon base URL must include a host (FQDN or IP) and optional port")
+	}
+	origin := &url.URL{Scheme: u.Scheme, Host: u.Host}
+	out := strings.TrimRight(origin.String(), "/")
+	return out, nil
 }
 
 func adminCookieSecure() bool {

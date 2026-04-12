@@ -90,9 +90,7 @@ func stringifyCommandsValue(raw interface{}) string {
 	case []interface{}:
 		var parts []string
 		for _, x := range v {
-			if s, ok := x.(string); ok {
-				parts = append(parts, s)
-			}
+			parts = append(parts, dbconnections.StringifyBeaconCommand(x))
 		}
 		return strings.Join(parts, "; ")
 	default:

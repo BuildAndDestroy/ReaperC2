@@ -47,6 +47,8 @@ type BeaconProfile struct {
 	HeartbeatURL            string    `bson:"heartbeat_url"`
 	CreatedAt               time.Time `bson:"created_at"`
 	CreatedBy               string    `bson:"created_by"`
+	// EngagementId matches engagements collection _id hex (scopes reports / UI).
+	EngagementID string `bson:"engagement_id,omitempty"`
 }
 
 // ChatMessage is one operator chat line.
@@ -91,6 +93,24 @@ func ListBeaconClients(ctx context.Context) ([]BeaconClientDocument, error) {
 	return out, cur.Err()
 }
 
+// ListBeaconClientsByEngagement returns clients for one engagement (EngagementId matches hex ObjectId).
+func ListBeaconClientsByEngagement(ctx context.Context, engagementIDHex string) ([]BeaconClientDocument, error) {
+	cur, err := ClientCollection.Find(ctx, bson.M{"EngagementId": engagementIDHex}, options.Find().SetSort(bson.D{{Key: "ClientId", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []BeaconClientDocument
+	for cur.Next(ctx) {
+		var doc BeaconClientDocument
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		out = append(out, doc)
+	}
+	return out, cur.Err()
+}
+
 // InsertBeaconProfile saves a profile document.
 func InsertBeaconProfile(ctx context.Context, p BeaconProfile) (primitive.ObjectID, error) {
 	p.CreatedAt = time.Now().UTC()
@@ -107,6 +127,28 @@ func ListBeaconProfiles(ctx context.Context, limit int64) ([]BeaconProfile, erro
 		limit = 200
 	}
 	cur, err := BeaconProfilesCollection.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []BeaconProfile
+	for cur.Next(ctx) {
+		var p BeaconProfile
+		if err := cur.Decode(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, cur.Err()
+}
+
+// ListBeaconProfilesByEngagement returns profiles scoped to an engagement.
+func ListBeaconProfilesByEngagement(ctx context.Context, engagementIDHex string, limit int64) ([]BeaconProfile, error) {
+	if limit < 1 {
+		limit = 200
+	}
+	cur, err := BeaconProfilesCollection.Find(ctx, bson.M{"engagement_id": engagementIDHex},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -169,10 +211,18 @@ func InsertChatMessage(ctx context.Context, m ChatMessage) error {
 
 // ListChatMessagesSince returns messages with created_at >= since (UTC), oldest first for display.
 func ListChatMessagesSince(ctx context.Context, since time.Time, limit int64) ([]ChatMessage, error) {
+	return ListChatMessagesSinceForRoom(ctx, "", since, limit)
+}
+
+// ListChatMessagesSinceForRoom filters by room (empty room matches legacy "global" only for backward compat — use explicit room for engagements).
+func ListChatMessagesSinceForRoom(ctx context.Context, room string, since time.Time, limit int64) ([]ChatMessage, error) {
 	if limit < 1 || limit > 500 {
 		limit = 200
 	}
 	filter := bson.M{"created_at": bson.M{"$gt": since}}
+	if room != "" {
+		filter["room"] = room
+	}
 	cur, err := OperatorChatCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
@@ -191,10 +241,19 @@ func ListChatMessagesSince(ctx context.Context, since time.Time, limit int64) ([
 
 // ListRecentChatMessages returns the last N messages (newest last in slice).
 func ListRecentChatMessages(ctx context.Context, limit int64) ([]ChatMessage, error) {
+	return ListRecentChatMessagesForRoom(ctx, "", limit)
+}
+
+// ListRecentChatMessagesForRoom returns the last N messages in a room (empty room = all rooms, for admin tooling only).
+func ListRecentChatMessagesForRoom(ctx context.Context, room string, limit int64) ([]ChatMessage, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	cur, err := OperatorChatCollection.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit))
+	filter := bson.M{}
+	if room != "" {
+		filter["room"] = room
+	}
+	cur, err := OperatorChatCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
 	}

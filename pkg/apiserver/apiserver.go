@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -157,7 +158,7 @@ func HandleHeartBeatUUID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch and clear commands
-	commands, err := dbconnections.FetchAndClearCommands(uuid)
+	commands, err := dbconnections.FetchAndClearCommands(r.Context(), uuid)
 	if err != nil {
 		http.Error(w, "Failed to retrieve commands", http.StatusInternalServerError)
 		return
@@ -224,27 +225,29 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	clientUUID := vars["uuid"] // Extract from URL
 
-	var requestData struct {
-		Command string `json:"Command"`
-		Output  string `json:"Output"`
-	}
-
-	err := json.NewDecoder(r.Body).Decode(&requestData)
+	cmdStr, outStr, err := decodeReceiveUUIDBody(r)
 	if err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[+] Received response from %s | Command: %s | Output: %s", clientUUID, requestData.Command, requestData.Output)
+	log.Printf("[+] Received response from %s | Command: %s | Output: %s", clientUUID, cmdStr, outStr)
 
-	err = dbconnections.StoreClientData(clientUUID, requestData.Command, requestData.Output)
+	output := outStr
+	if processed, err := dbconnections.ProcessScytheDownloadOutput(context.Background(), clientUUID, output); err != nil {
+		log.Printf("[-] scythe download processing (storing raw output): %v", err)
+	} else {
+		output = processed
+	}
+
+	err = dbconnections.StoreClientData(r.Context(), clientUUID, cmdStr, output)
 	if err != nil {
 		log.Printf("[-] Failed to store data for %s: %v", clientUUID, err)
 		http.Error(w, "Failed to store data", http.StatusInternalServerError)
 		return
 	}
 
-	auditBeaconOutputReceived(clientUUID, requestData.Command, requestData.Output)
+	auditBeaconOutputReceived(clientUUID, cmdStr, output)
 
 	go func(id string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -257,6 +260,38 @@ func HandleReceiveUUID(w http.ResponseWriter, r *http.Request) {
 	JsonResponse(w, http.StatusOK, map[string]string{"message": "Data received and stored successfully"})
 }
 
+// decodeReceiveUUIDBody reads Scythe's POST body. Scythe's SendCommandOutput uses lowercase
+// "command" and "output"; other tooling may send "Command" / "Output".
+func decodeReceiveUUIDBody(r *http.Request) (command, output string, err error) {
+	var raw map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return "", "", err
+	}
+	command = jsonStringField(raw, "Command", "command")
+	output = jsonStringField(raw, "Output", "output")
+	return command, output, nil
+}
+
+func jsonStringField(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			return t
+		case []byte:
+			return string(t)
+		case fmt.Stringer:
+			return t.String()
+		default:
+			return fmt.Sprint(t)
+		}
+	}
+	return ""
+}
+
 // 404 handler
 func HandleFourOhFour(w http.ResponseWriter, r *http.Request) {
 	// 404 fallback
@@ -267,14 +302,15 @@ func HandleFourOhFour(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func auditBeaconCommandsDelivered(clientID string, commands []string) {
+func auditBeaconCommandsDelivered(clientID string, commands []interface{}) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
+		eid := auditEngagementIDForClient(ctx, clientID)
 		if err := dbconnections.InsertAuditLog(ctx, "beacon", dbconnections.AuditActionBeaconCommandsDelivered, bson.M{
 			"client_id": clientID,
 			"commands":  commands,
-		}); err != nil {
+		}, eid); err != nil {
 			log.Printf("audit beacon_commands_delivered: %v", err)
 		}
 	}()
@@ -289,15 +325,24 @@ func auditBeaconOutputReceived(clientID, command, output string) {
 		if len(preview) > maxPreview {
 			preview = preview[:maxPreview] + "… [truncated]"
 		}
+		eid := auditEngagementIDForClient(ctx, clientID)
 		if err := dbconnections.InsertAuditLog(ctx, "beacon", dbconnections.AuditActionBeaconOutputReceived, bson.M{
 			"client_id":      clientID,
 			"command":        command,
 			"output_preview": preview,
 			"output_bytes":   len(output),
-		}); err != nil {
+		}, eid); err != nil {
 			log.Printf("audit beacon_output_received: %v", err)
 		}
 	}()
+}
+
+func auditEngagementIDForClient(ctx context.Context, clientID string) string {
+	c, err := dbconnections.FindBeaconClientByID(ctx, clientID)
+	if err != nil || c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.EngagementId)
 }
 
 // jsonResponse sends JSON data with the appropriate headers

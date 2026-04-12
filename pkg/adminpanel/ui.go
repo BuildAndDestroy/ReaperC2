@@ -15,10 +15,12 @@ func navItem(href, label, active, slug string) string {
 
 // layoutHTML returns a full page with left nav and main content (body is trusted HTML from our templates only).
 // role is "admin" or "operator" (drives optional admin-only nav: Users, Logs).
-func layoutHTML(username, role, active, title, bodyHTML string) string {
+// engagementBannerHTML / engagementScript are optional (active engagement context).
+func layoutHTML(username, role, active, title, bodyHTML, engagementBannerHTML, engagementScript string) string {
+	engagementNav := navItem("/engagement/logs", "Engagement logs", active, "englogs")
 	adminNav := ""
 	if role == "admin" {
-		adminNav = navItem("/users", "Users", active, "users") + navItem("/logs", "Logs", active, "logs")
+		adminNav = navItem("/users", "Users", active, "users") + navItem("/logs", "All logs", active, "logs")
 	}
 	foot := template.HTMLEscapeString(username) + ` <span class="muted">(` + template.HTMLEscapeString(role) + `)</span>`
 	return `<!DOCTYPE html>
@@ -36,6 +38,20 @@ aside {
   padding: 1rem 0; display: flex; flex-direction: column;
 }
 aside .brand { font-weight: 700; padding: 0 1rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: .5rem; }
+.engagement-bar {
+  font-size: .82rem; padding: .5rem 1rem; border-bottom: 1px solid var(--border); background: #0d1117;
+  line-height: 1.35;
+}
+.engagement-bar a { color: var(--accent); }
+.eng-closed-pill {
+  display: inline-block; margin-right: .5rem; padding: .12rem .45rem; font-size: .72rem; font-weight: 600;
+  border-radius: 4px; background: #6e7681; color: #f0f6fc;
+}
+dialog.eng-manage-dialog { max-width: 36rem; width: calc(100vw - 2rem); border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); padding: 1.25rem; }
+dialog.eng-manage-dialog::backdrop { background: rgba(0,0,0,.55); }
+dialog.eng-manage-dialog h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
+dialog.eng-manage-dialog textarea { min-height: 10rem; max-width: 100%; }
+dialog.eng-manage-dialog .dlg-actions { margin-top: .75rem; display: flex; gap: .5rem; flex-wrap: wrap; }
 aside .nav-item {
   display: block; padding: .55rem 1rem; color: var(--text); text-decoration: none; border-left: 3px solid transparent;
 }
@@ -96,19 +112,76 @@ details.profile-creds .creds-label { font-size: .72rem; color: var(--muted); tex
 button.btn-tiny { padding: .25rem .55rem; font-size: .75rem; margin-top: .35rem; margin-right: .35rem; border-radius: 6px; border: 1px solid var(--border); background: #21262d; color: var(--text); cursor: pointer; }
 button.btn-tiny:hover { background: #30363d; }
 .profile-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start; }
-.cmd-history-table { font-size: .88rem; }
-.cmd-history-table td { vertical-align: top; }
-pre.cmd-history-out { max-height: 240px; overflow: auto; margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
+.cmd-history-table { font-size: .88rem; table-layout: fixed; width: 100%; border-collapse: collapse; }
+.cmd-history-table td, .cmd-history-table th { vertical-align: top; }
+.cmd-history-table .cmd-history-time { width: 9.5rem; white-space: nowrap; font-size: .78rem; padding-right: .5rem; }
+.cmd-history-table .cmd-history-th-cmd { width: 30%; max-width: 22rem; }
+.cmd-history-table .cmd-history-th-out { width: auto; min-width: 40%; }
+.cmd-history-table .cmd-history-cmd-cell { max-width: 22rem; width: 30%; overflow: hidden; }
+.cmd-history-table pre.cmd-history-cmd-pre {
+  margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  font-size: .72rem; line-height: 1.35;
+}
+.cmd-history-table .cmd-history-out-cell { min-width: 12rem; width: auto; }
+pre.cmd-history-out { max-height: 280px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; font-size: .82rem; line-height: 1.4; }
+.cmd-page-lead { margin: 0 0 1rem; max-width: 48rem; line-height: 1.45; }
+.cmd-page-card { max-width: 60rem; }
+.cmd-beacon-row select { max-width: 100%; }
+.commands-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem 1.5rem;
+  margin-top: .75rem;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .commands-two-col { grid-template-columns: 1fr; }
+}
+.commands-panel h3.commands-h3 {
+  font-size: .95rem;
+  margin: 0 0 .65rem;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.commands-panel label:first-of-type { margin-top: 0; }
+.cmd-inline-msg { margin-top: .5rem; min-height: 1.15rem; font-size: .82rem; }
+details.cmd-fold {
+  margin-top: 1rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+}
+details.cmd-fold summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--text);
+  list-style: none;
+  padding: .2rem 0;
+}
+details.cmd-fold summary::-webkit-details-marker { display: none; }
+details.cmd-fold summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+details.cmd-fold[open] summary::before { content: "▾ "; }
+.cmd-fold-body { margin-top: .65rem; }
+.cmd-fold-actions { margin-bottom: .5rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.pending-table-wrap { overflow-x: auto; margin: .35rem 0; font-size: .85rem; }
 </style>
+` + engagementScript + `
 </head>
 <body>
 <aside>
   <div class="brand">ReaperC2</div>
+` + engagementBannerHTML + `
+` + navItem("/engagements", "Engagements", active, "engagements") + `
 ` + navItem("/beacons", "Beacons", active, "beacons") + `
 ` + navItem("/commands", "Commands", active, "commands") + `
 ` + navItem("/reports", "Reports", active, "reports") + `
 ` + navItem("/topology", "Topology", active, "topology") + `
 ` + navItem("/chat", "Chat", active, "chat") + `
+` + engagementNav + `
 ` + adminNav + `
   <div class="foot">
     <div>` + foot + `</div>
@@ -135,6 +208,7 @@ pre.cmd-history-out { max-height: 240px; overflow: auto; margin: .25rem 0 0; whi
   var prevSeenAt = null;
   var prevStatus = null;
   function pollPresence() {
+    if (typeof window.__REAPER_ENGAGEMENT_ID__ === 'undefined' || !window.__REAPER_ENGAGEMENT_ID__) return;
     fetch('/api/beacon-presence', { credentials: 'same-origin' })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(x) {

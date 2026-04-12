@@ -152,17 +152,15 @@ func FindClientByUUID(uuid string) (*ClientAuth, error) {
 	return &client, nil
 }
 
-// Fetch and clear commands for a given ClientId
-func FetchAndClearCommands(clientId string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// FetchAndClearCommands loads queued commands, expands staged upload references into Scythe JSON (content_base64), clears the queue, and returns what the beacon should run.
+func FetchAndClearCommands(ctx context.Context, clientId string) ([]interface{}, error) {
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	// Define a struct to hold just the Commands field
 	var result struct {
-		Commands []string `bson:"Commands"`
+		Commands []interface{} `bson:"Commands"`
 	}
 
-	// Find the document and retrieve the Commands array
 	filter := bson.M{"ClientId": clientId}
 	err := ClientCollection.FindOne(ctx, filter).Decode(&result)
 	if err != nil {
@@ -173,10 +171,20 @@ func FetchAndClearCommands(clientId string) ([]string, error) {
 		return nil, err
 	}
 
-	// Clear the commands array and record check-in time (same write as heartbeat).
+	cmds := result.Commands
+	if cmds == nil {
+		cmds = []interface{}{}
+	}
+
+	expanded, err := expandStagingUploadCommands(ctx, clientId, cmds)
+	if err != nil {
+		log.Println("expand staging upload commands:", err)
+		return nil, err
+	}
+
 	now := time.Now().UTC()
 	update := bson.M{"$set": bson.M{
-		"Commands":   []string{},
+		"Commands":   bson.A{},
 		"LastSeenAt": now,
 	}}
 	_, err = ClientCollection.UpdateOne(ctx, filter, update)
@@ -185,18 +193,12 @@ func FetchAndClearCommands(clientId string) ([]string, error) {
 		return nil, err
 	}
 
-	return result.Commands, nil
+	return expanded, nil
 }
 
-// AppendBeaconCommands appends command strings to the client's Commands array (delivered on next heartbeat).
-func AppendBeaconCommands(ctx context.Context, clientID string, commands []string) error {
-	var push []string
-	for _, c := range commands {
-		c = strings.TrimSpace(c)
-		if c != "" {
-			push = append(push, c)
-		}
-	}
+// AppendBeaconCommands appends commands to the client's Commands array (strings and/or BSON maps for Scythe file ops).
+func AppendBeaconCommands(ctx context.Context, clientID string, commands []interface{}) error {
+	push := normalizeQueuedCommands(commands)
 	if len(push) == 0 {
 		return fmt.Errorf("no commands to queue")
 	}
@@ -212,6 +214,32 @@ func AppendBeaconCommands(ctx context.Context, clientID string, commands []strin
 		return mongo.ErrNoDocuments
 	}
 	return nil
+}
+
+func normalizeQueuedCommands(commands []interface{}) []interface{} {
+	var push []interface{}
+	for _, c := range commands {
+		switch v := c.(type) {
+		case string:
+			s := strings.TrimSpace(v)
+			if s != "" {
+				push = append(push, s)
+			}
+		case map[string]interface{}:
+			if len(v) > 0 {
+				push = append(push, v)
+			}
+		case bson.M:
+			if len(v) > 0 {
+				push = append(push, v)
+			}
+		default:
+			if v != nil {
+				push = append(push, v)
+			}
+		}
+	}
+	return push
 }
 
 // DeleteBeaconClient removes a row from the clients collection by ClientId.
@@ -251,8 +279,11 @@ func FetchClientData(clientId string) ([]bson.M, error) {
 }
 
 // StoreClientData saves received command output in the "data" collection
-func StoreClientData(clientUUID, command, output string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func StoreClientData(ctx context.Context, clientUUID, command, output string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	dataEntry := bson.M{
@@ -260,6 +291,9 @@ func StoreClientData(clientUUID, command, output string) error {
 		"Command":   command,
 		"Output":    output,
 		"Timestamp": time.Now(),
+	}
+	if c, err := FindBeaconClientByID(ctx, clientUUID); err == nil && c != nil && strings.TrimSpace(c.EngagementId) != "" {
+		dataEntry["EngagementId"] = strings.TrimSpace(c.EngagementId)
 	}
 
 	_, err := DataCollection.InsertOne(ctx, dataEntry)
@@ -271,11 +305,12 @@ func StoreClientData(clientUUID, command, output string) error {
 
 // CommandOutputRecord is one row in the data collection (command result from POST /receive/{uuid}).
 type CommandOutputRecord struct {
-	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	ClientID  string             `json:"client_id" bson:"ClientId"`
-	Command   string             `json:"command" bson:"Command"`
-	Output    string             `json:"output" bson:"Output"`
-	Timestamp time.Time          `json:"timestamp" bson:"Timestamp"`
+	ID           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	ClientID     string             `json:"client_id" bson:"ClientId"`
+	Command      string             `json:"command" bson:"Command"`
+	Output       string             `json:"output" bson:"Output"`
+	Timestamp    time.Time          `json:"timestamp" bson:"Timestamp"`
+	EngagementID string             `json:"engagement_id,omitempty" bson:"EngagementId,omitempty"`
 }
 
 // ListCommandOutputForClient returns stored command/output pairs for a beacon, newest first.
@@ -305,12 +340,32 @@ func ListCommandOutputForClient(ctx context.Context, clientID string, limit int6
 
 // ListRecentCommandOutputForExport returns newest rows from the data collection (reports / briefings).
 func ListRecentCommandOutputForExport(ctx context.Context, limit int64) ([]CommandOutputRecord, error) {
+	return listCommandOutputWithFilter(ctx, bson.M{}, limit)
+}
+
+// ListRecentCommandOutputForEngagement returns newest command output rows for beacons in this engagement.
+func ListRecentCommandOutputForEngagement(ctx context.Context, engagementIDHex string, limit int64) ([]CommandOutputRecord, error) {
+	clients, err := ListBeaconClientsByEngagement(ctx, engagementIDHex)
+	if err != nil {
+		return nil, err
+	}
+	if len(clients) == 0 {
+		return []CommandOutputRecord{}, nil
+	}
+	ids := make([]string, len(clients))
+	for i := range clients {
+		ids[i] = clients[i].ClientId
+	}
+	return listCommandOutputWithFilter(ctx, bson.M{"ClientId": bson.M{"$in": ids}}, limit)
+}
+
+func listCommandOutputWithFilter(ctx context.Context, filter bson.M, limit int64) ([]CommandOutputRecord, error) {
 	if limit < 1 || limit > 20000 {
 		limit = 5000
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	cur, err := DataCollection.Find(ctx, bson.M{}, options.Find().
+	cur, err := DataCollection.Find(ctx, filter, options.Find().
 		SetSort(bson.D{{Key: "Timestamp", Value: -1}}).
 		SetLimit(limit))
 	if err != nil {
