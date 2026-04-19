@@ -9,12 +9,6 @@ ReaperC2
 </h1>
 
 
-## Work In Progress
-
-This C2 is currently in development.
-Would do not recommend using this server until a stable release is built.
-Currently only uses commands, we will need to integrate better calls
-
 ## Example - Testing
 
 ### Docker Compose (full stack)

