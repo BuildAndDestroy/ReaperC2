@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ReaperC2/pkg/dbconnections"
+	"ReaperC2/pkg/mitreattack"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -19,6 +20,9 @@ import (
 )
 
 const maxEngagementNotesLen = 50000
+
+// maxEngagementAttackTacticNotesLen caps total characters across all tactic note fields.
+const maxEngagementAttackTacticNotesLen = 50000
 
 func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	user, role, ok := s.requireHTMLAuth(w, r)
@@ -112,7 +116,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `
 <h1>Engagements</h1>
-<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, notes, and (for administrators) <strong>assigned operators</strong>. Closed engagements show a banner pill.</p>
+<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, general notes, <strong>MITRE ATT&amp;CK</strong> tactic notes (for Navigator / reports), and (for administrators) <strong>assigned operators</strong>. Closed engagements show a banner pill.</p>
 <div class="card">
   <h2>Your engagements</h2>
   <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Status</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
@@ -134,6 +138,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <label for="engDlgNotes">Notes</label>
   <p class="muted" style="font-size:.82rem;margin:.35rem 0 0">Internal reminders, scope, handoff — not shown to beacons.</p>
   <textarea id="engDlgNotes" placeholder="e.g. pivot rules, reporting window, customer contacts…"></textarea>
+  ` + engagementAttackNotesManageHTML() + `
   <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
     <label>Assigned operators</label>
     <p class="muted" style="font-size:.82rem;margin:.25rem 0 .35rem">Administrators only: choose which operators can open this workspace. Admins always have access.</p>
@@ -233,6 +238,13 @@ document.querySelectorAll('[data-manage]').forEach(function(btn) {
     if (haul !== 'short_haul' && haul !== 'long_haul') haul = 'interactive';
     document.getElementById('engDlgHaul').value = haul;
     document.getElementById('engDlgNotes').value = j.notes || '';
+    var atkMap = j.attack_tactic_notes || {};
+    document.querySelectorAll('[data-atk-tactic]').forEach(function(el) {
+      var k = el.getAttribute('data-atk-tactic');
+      el.value = (atkMap[k] !== undefined && atkMap[k] !== null) ? atkMap[k] : '';
+    });
+    var navA = document.getElementById('engAtkNavDownload');
+    if (navA) navA.href = '/api/engagements/' + encodeURIComponent(engDlgId) + '/attack-navigator-layer?attack_version=19';
     buildEngDlgOps(j);
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
   };
@@ -242,10 +254,15 @@ document.getElementById('engDlgSave').onclick = async function() {
   var msg = document.getElementById('engDlgMsg');
   if (!engDlgId) return;
   msg.textContent = 'Saving…';
+  var atk = {};
+  document.querySelectorAll('[data-atk-tactic]').forEach(function(el) {
+    atk[el.getAttribute('data-atk-tactic')] = el.value;
+  });
   var body = {
     status: document.getElementById('engDlgStatus').value,
     haul_type: document.getElementById('engDlgHaul').value,
-    notes: document.getElementById('engDlgNotes').value
+    notes: document.getElementById('engDlgNotes').value,
+    attack_tactic_notes: atk
   };
   if (window.__REAPER_IS_ADMIN__) {
     var aops = [];
@@ -293,14 +310,15 @@ document.getElementById('enCreate').onclick = async function() {
 }
 
 type createEngagementAPI struct {
-	Name              string   `json:"name"`
-	ClientName        string   `json:"client_name"`
-	StartDate         string   `json:"start_date"`
-	EndDate           string   `json:"end_date"`
-	HaulType          string   `json:"haul_type"`
-	SlackDiscordRoom  string   `json:"slack_discord_room"`
-	AssignedOperators []string `json:"assigned_operators"`
-	Notes             string   `json:"notes"`
+	Name              string            `json:"name"`
+	ClientName        string            `json:"client_name"`
+	StartDate         string            `json:"start_date"`
+	EndDate           string            `json:"end_date"`
+	HaulType          string            `json:"haul_type"`
+	SlackDiscordRoom  string            `json:"slack_discord_room"`
+	AssignedOperators []string          `json:"assigned_operators"`
+	Notes             string            `json:"notes"`
+	AttackTacticNotes map[string]string `json:"attack_tactic_notes"`
 }
 
 func parseEngagementDate(s string) (time.Time, error) {
@@ -357,6 +375,10 @@ func (s *Server) handleAPIEngagementsCreate(w http.ResponseWriter, r *http.Reque
 		jsonError(w, http.StatusBadRequest, "notes too long")
 		return
 	}
+	if req.AttackTacticNotes != nil && mitreattack.TacticNotesTotalLen(req.AttackTacticNotes) > maxEngagementAttackTacticNotesLen {
+		jsonError(w, http.StatusBadRequest, "attack tactic notes too long")
+		return
+	}
 	var assign []string
 	for _, u := range req.AssignedOperators {
 		u = strings.TrimSpace(u)
@@ -393,6 +415,7 @@ func (s *Server) handleAPIEngagementsCreate(w http.ResponseWriter, r *http.Reque
 		AssignedOperators: assign,
 		CreatedBy:         user,
 		Notes:             req.Notes,
+		AttackTacticNotes: req.AttackTacticNotes,
 	})
 	if err != nil {
 		log.Printf("admin: insert engagement: %v", err)
@@ -495,19 +518,20 @@ func engagementAPIMap(e *dbconnections.Engagement) map[string]interface{} {
 	}
 	ht := dbconnections.NormalizeEngagementHaulType(e.HaulType)
 	return map[string]interface{}{
-		"id":                 e.ID.Hex(),
-		"name":               e.Name,
-		"client_name":        e.ClientName,
-		"start_date":         e.StartDate.UTC().Format(time.RFC3339),
-		"end_date":           e.EndDate.UTC().Format(time.RFC3339),
-		"slack_discord_room": e.SlackDiscordRoom,
-		"assigned_operators": e.AssignedOperators,
-		"status":             st,
-		"haul_type":          ht,
-		"haul_type_label":    dbconnections.EngagementHaulTypeLabel(ht),
-		"notes":              e.Notes,
-		"created_at":         e.CreatedAt.UTC().Format(time.RFC3339),
-		"created_by":         e.CreatedBy,
+		"id":                  e.ID.Hex(),
+		"name":                e.Name,
+		"client_name":         e.ClientName,
+		"start_date":          e.StartDate.UTC().Format(time.RFC3339),
+		"end_date":            e.EndDate.UTC().Format(time.RFC3339),
+		"slack_discord_room":  e.SlackDiscordRoom,
+		"assigned_operators":  e.AssignedOperators,
+		"status":              st,
+		"haul_type":           ht,
+		"haul_type_label":     dbconnections.EngagementHaulTypeLabel(ht),
+		"notes":               e.Notes,
+		"attack_tactic_notes": mitreattack.FullTacticNoteMap(e.AttackTacticNotes),
+		"created_at":          e.CreatedAt.UTC().Format(time.RFC3339),
+		"created_by":          e.CreatedBy,
 	}
 }
 
@@ -547,10 +571,11 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(engagementAPIMap(e))
 	case http.MethodPatch:
 		var req struct {
-			Status              *string   `json:"status"`
-			Notes               *string   `json:"notes"`
-			HaulType            *string   `json:"haul_type"`
-			AssignedOperators   *[]string `json:"assigned_operators"`
+			Status            *string            `json:"status"`
+			Notes             *string            `json:"notes"`
+			AttackTacticNotes *map[string]string `json:"attack_tactic_notes"`
+			HaulType          *string            `json:"haul_type"`
+			AssignedOperators *[]string          `json:"assigned_operators"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, http.StatusBadRequest, "invalid json")
@@ -568,6 +593,13 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 			}
 			patch.Notes = req.Notes
 		}
+		if req.AttackTacticNotes != nil {
+			if mitreattack.TacticNotesTotalLen(*req.AttackTacticNotes) > maxEngagementAttackTacticNotesLen {
+				jsonError(w, http.StatusBadRequest, "attack tactic notes too long")
+				return
+			}
+			patch.AttackTacticNotes = req.AttackTacticNotes
+		}
 		if req.HaulType != nil {
 			h := strings.TrimSpace(*req.HaulType)
 			patch.HaulType = &h
@@ -579,7 +611,7 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 			}
 			patch.AssignedOperators = req.AssignedOperators
 		}
-		if patch.Status == nil && patch.Notes == nil && patch.HaulType == nil && patch.AssignedOperators == nil {
+		if patch.Status == nil && patch.Notes == nil && patch.AttackTacticNotes == nil && patch.HaulType == nil && patch.AssignedOperators == nil {
 			jsonError(w, http.StatusBadRequest, "no changes")
 			return
 		}
@@ -615,4 +647,104 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func engagementAttackNotesManageHTML() string {
+	var b strings.Builder
+	b.WriteString(`<details class="atk-notes-manage" open style="margin-top:.75rem;border-top:1px solid var(--border);padding-top:.75rem">`)
+	b.WriteString(`<summary style="cursor:pointer;font-weight:600">MITRE ATT&amp;CK tactic notes</summary>`)
+	b.WriteString(`<p class="muted" style="font-size:.82rem;margin:.5rem 0 .35rem">One field per enterprise tactic (Navigator <code>tactic</code> shortnames). Use for reporting; export loads in <a href="https://mitre-attack.github.io/attack-navigator/" target="_blank" rel="noopener">ATT&amp;CK Navigator</a> with <code>versions.attack</code> 16–19 via <code>?attack_version=</code>.</p>`)
+	for _, t := range mitreattack.EnterpriseTactics() {
+		b.WriteString(`<label for="engAtk_`)
+		b.WriteString(template.HTMLEscapeString(t.Key))
+		b.WriteString(`" style="margin-top:.5rem;display:block">`)
+		b.WriteString(template.HTMLEscapeString(t.Label))
+		b.WriteString(`</label><textarea id="engAtk_`)
+		b.WriteString(template.HTMLEscapeString(t.Key))
+		b.WriteString(`" data-atk-tactic="`)
+		b.WriteString(template.HTMLEscapeString(t.Key))
+		b.WriteString(`" rows="2" class="atk-tactic-note" placeholder="Procedures, techniques, or narrative for this tactic…"></textarea>`)
+	}
+	b.WriteString(`<p style="margin:.6rem 0 0"><a id="engAtkNavDownload" href="#" style="font-size:.85rem">Download Navigator layer JSON (ATT&amp;CK v19)</a></p>`)
+	b.WriteString(`</details>`)
+	return b.String()
+}
+
+func engagementNavigatorDownloadFilename(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else if r == ' ' {
+			b.WriteRune('-')
+		}
+	}
+	s := strings.Trim(b.String(), "-")
+	if s == "" {
+		s = "engagement"
+	}
+	return s + "-attack-navigator.json"
+}
+
+func navigatorLayerDescription(e *dbconnections.Engagement) string {
+	var parts []string
+	if strings.TrimSpace(e.Notes) != "" {
+		parts = append(parts, "General notes\n"+strings.TrimSpace(e.Notes))
+	}
+	if d := mitreattack.FormatTacticNotesDescription(e.AttackTacticNotes); d != "" {
+		parts = append(parts, d)
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+// handleAPIEngagementAttackNavigatorLayer serves an ATT&CK Navigator layer JSON for one engagement.
+func (s *Server) handleAPIEngagementAttackNavigatorLayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user, role, ok := s.sessionUser(r)
+	if !ok {
+		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	idHex := strings.TrimSpace(mux.Vars(r)["id"])
+	if idHex == "" {
+		jsonError(w, http.StatusBadRequest, "engagement id required")
+		return
+	}
+	if _, err := primitive.ObjectIDFromHex(idHex); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid engagement id")
+		return
+	}
+	ver, err := mitreattack.ParseAttackVersion(r.URL.Query().Get("attack_version"))
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	e, err := dbconnections.FindEngagementByID(ctx, idHex)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			jsonError(w, http.StatusNotFound, "engagement not found")
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "failed to load engagement")
+		return
+	}
+	if !dbconnections.UserCanAccessEngagement(role, user, e) {
+		jsonError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	layer := mitreattack.NavigatorLayer(e.Name, navigatorLayerDescription(e), ver)
+	raw, err := mitreattack.MarshalNavigatorLayer(layer)
+	if err != nil {
+		log.Printf("admin: marshal navigator layer: %v", err)
+		jsonError(w, http.StatusInternalServerError, "export failed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+engagementNavigatorDownloadFilename(e.Name)+`"`)
+	_, _ = w.Write(raw)
 }

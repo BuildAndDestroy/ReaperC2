@@ -1,0 +1,3 @@
+# Focus on first-party code; vendored Scythe is tracked separately via govulncheck/Trivy.
+paths-ignore:
+  - third_party/**

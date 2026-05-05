@@ -38,11 +38,13 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/engagements", s.handleAPIEngagements).Methods(http.MethodGet, http.MethodPost)
 	s.router.HandleFunc("/api/engagements/active", s.handleAPIEngagementsActivePOST).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/engagements/{id}", s.handleAPIEngagementByID).Methods(http.MethodGet, http.MethodPatch)
+	s.router.HandleFunc("/api/engagements/{id}/attack-navigator-layer", s.handleAPIEngagementAttackNavigatorLayer).Methods(http.MethodGet)
 
 	s.router.HandleFunc("/api/beacons", s.handleCreateBeacon).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/beacons/scythe-embedded", s.handleAPIScytheEmbedded).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/reports/export", s.handleAPIReportsExport).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/reports/export-ghostwriter", s.handleAPIReportsExportGhostwriter).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/reports/attack-navigator-layer", s.handleAPIReportsAttackNavigatorLayer).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/topology", s.handleAPITopology).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/beacon-presence", s.handleAPIBeaconPresence).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/chat/messages", s.handleAPIChatMessages).Methods(http.MethodGet, http.MethodPost)

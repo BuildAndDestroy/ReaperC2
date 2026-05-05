@@ -1,0 +1,51 @@
+# SAST that works on private repos without GitHub Advanced Security (results in the
+# Actions log; CodeQL SARIF in the Security tab typically needs GHAS on private repos).
+#
+# Other options teams often add: SonarCloud, Snyk Code, Bearer, DeepSource,
+# Trivy filesystem/config scan (`trivy fs .`), or self-hosted Semgrep Team / DefectDojo.
+#
+# Semgrep: not --error by default — this repo uses plain HTTP by design (beacon/admin).
+#   Add --error after triaging, or add per-rule suppressions in code.
+# gosec: only HIGH severity fails the build (tune with -severity).
+name: SAST (Semgrep + gosec)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Semgrep scan (advisory)
+        run: >
+          semgrep scan
+          --config p/golang
+          --config p/security-audit
+          --exclude-rule go.lang.security.audit.net.use-tls.use-tls
+          --exclude third_party
+
+  gosec:
+    name: gosec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run gosec
+        uses: securego/gosec@v2.22.10
+        with:
+          args: "-exclude-dir=third_party -severity high -fmt text -stdout -verbose=0 ./..."

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -127,7 +128,15 @@ func verifyArgon2idStored(storedHash, plain string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("hash: %w", err)
 	}
-	got := argon2.IDKey([]byte(plain), salt, itime, mem, uint8(threads), uint32(len(want)))
+	if threads > 255 {
+		return false, fmt.Errorf("invalid argon2 parallelism")
+	}
+	lw := len(want)
+	if uint64(lw) > math.MaxUint32 {
+		return false, fmt.Errorf("invalid hash length")
+	}
+	// lw is bounded to fit uint32 (check above); uint8(threads) is bounded to 255.
+	got := argon2.IDKey([]byte(plain), salt, itime, mem, uint8(threads), uint32(lw)) // #nosec G115
 	if len(got) != len(want) {
 		return false, nil
 	}
