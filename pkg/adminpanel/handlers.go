@@ -24,17 +24,30 @@ import (
 
 var loginPage = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+` + themeFontLinks() + `
+` + themeBootScript() + `
 <title>ReaperC2 Admin — Sign in</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0f1419;color:#e6edf3;margin:0;padding:2rem;line-height:1.5}
-.card{max-width:24rem;margin:2rem auto;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.5rem}
+html{--bg:#000000;--bg-elevated:#12100c;--border:#2e261c;--text:#f2ebd3;--muted:#9a9180;--accent:#c6934b;--accent-dim:#a67b3d;--danger:#ff6b6b;--panel:var(--bg-elevated);--input-bg:var(--bg);--font-sans:"IBM Plex Sans",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace}
+html[data-theme=light]{--bg:#f6f3ea;--bg-elevated:#ffffff;--border:#d8cdb8;--text:#1f1a12;--muted:#62584a;--accent:#9c6a22;--accent-dim:#7f551a;--danger:#b3261e}
+body{font-family:var(--font-sans);background:var(--bg);color:var(--text);margin:0;padding:2rem;line-height:1.5;min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;background-image:linear-gradient(rgba(198,147,75,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(198,147,75,0.04) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
+body>.card{position:relative;z-index:1}
+.card{max-width:24rem;margin:2rem auto;background:var(--panel);border:1px solid var(--border);border-radius:2px;padding:1.5rem}
+.auth-toolbar{display:flex;justify-content:flex-end;margin-bottom:.5rem}
+.theme-toggle{background:transparent;border:1px solid var(--border);color:var(--muted);padding:.3rem .55rem;border-radius:2px;font-size:.78rem;font-family:var(--font-mono);cursor:pointer}
+.theme-toggle:hover{color:var(--accent);border-color:var(--accent)}
 h1{font-size:1.25rem;margin-top:0}
-label{display:block;margin-top:1rem;color:#8b949e;font-size:.875rem}
-input{width:100%;box-sizing:border-box;margin-top:.35rem;padding:.5rem .65rem;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#e6edf3}
-button{cursor:pointer;width:100%;margin-top:1.25rem;padding:.6rem;border-radius:6px;border:1px solid #2ea043;background:#238636;color:#fff;font-weight:600}
-.err{color:#f85149;margin-top:.75rem;font-size:.9rem}
-.muted{color:#8b949e;font-size:.875rem}
+label{display:block;margin-top:1rem;color:var(--muted);font-size:.875rem}
+input{width:100%;box-sizing:border-box;margin-top:.35rem;padding:.5rem .65rem;border-radius:2px;border:1px solid var(--border);background:var(--input-bg);color:var(--text)}
+input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+button[type=submit]{cursor:pointer;width:100%;margin-top:1.25rem;padding:.6rem;border-radius:2px;border:1px solid var(--accent-dim);background:var(--accent);color:var(--bg);font-weight:600}
+button[type=submit]:hover{background:var(--accent-dim);border-color:var(--accent-dim)}
+.err{color:var(--danger);margin-top:.75rem;font-size:.9rem}
+.muted{color:var(--muted);font-size:.875rem}
+a.accent-link{color:var(--accent)}
 </style></head><body><div class="card">
+<div class="auth-toolbar"><button type="button" class="theme-toggle" id="auth-theme-toggle" aria-label="Switch color theme">Theme</button></div>
 <h1>Operator sign in</h1>
 <p class="muted">Admin listener (separate from beacon API).</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
@@ -43,7 +56,9 @@ button{cursor:pointer;width:100%;margin-top:1.25rem;padding:.6rem;border-radius:
 <label>Password</label><input name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button>
 </form>
-</div></body></html>`))
+</div>
+<script>(function(){var k='` + adminThemeStorageKey + `';var b=document.getElementById('auth-theme-toggle');function a(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem(k,t);if(b)b.textContent=t==='light'?'Dark':'Light';}if(b){b.addEventListener('click',function(){var c=document.documentElement.getAttribute('data-theme')||'dark';a(c==='light'?'dark':'light');});a(document.documentElement.getAttribute('data-theme')||'dark');}})();</script>
+</body></html>`))
 
 func writeHTML(w http.ResponseWriter, status int, t *template.Template, data interface{}) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

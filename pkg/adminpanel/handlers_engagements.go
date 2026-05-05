@@ -173,8 +173,8 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <p id="enMsg" class="cmd-inline-msg muted"></p>
 </div>
 <style>
-.eng-st-open { color: #3fb950; font-weight: 600; font-size: .85rem; }
-.eng-st-closed { color: #8b949e; font-weight: 600; font-size: .85rem; }
+.eng-st-open { color: var(--ok-bright); font-weight: 600; font-size: .85rem; }
+.eng-st-closed { color: var(--muted); font-weight: 600; font-size: .85rem; }
 </style>
 <script>
 window.__REAPER_IS_ADMIN__ = ` + map[bool]string{true: "true", false: "false"}[isAdminUser] + `;
