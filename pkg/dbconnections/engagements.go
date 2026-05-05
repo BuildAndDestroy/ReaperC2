@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"ReaperC2/pkg/mitreattack"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -67,19 +69,21 @@ func initEngagementsCollection(db *mongo.Database) {
 
 // Engagement is one assessment / operation workspace (scopes beacons, reports, topology, etc.).
 type Engagement struct {
-	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name               string             `bson:"name" json:"name"`
-	ClientName         string             `bson:"client_name" json:"client_name"`
-	StartDate          time.Time          `bson:"start_date" json:"start_date"`
-	EndDate            time.Time          `bson:"end_date" json:"end_date"`
-	SlackDiscordRoom   string             `bson:"slack_discord_room,omitempty" json:"slack_discord_room,omitempty"`
-	AssignedOperators  []string           `bson:"assigned_operators" json:"assigned_operators"`
-	CreatedAt          time.Time          `bson:"created_at" json:"created_at"`
-	CreatedBy          string             `bson:"created_by,omitempty" json:"created_by,omitempty"`
+	ID                primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name              string             `bson:"name" json:"name"`
+	ClientName        string             `bson:"client_name" json:"client_name"`
+	StartDate         time.Time          `bson:"start_date" json:"start_date"`
+	EndDate           time.Time          `bson:"end_date" json:"end_date"`
+	SlackDiscordRoom  string             `bson:"slack_discord_room,omitempty" json:"slack_discord_room,omitempty"`
+	AssignedOperators []string           `bson:"assigned_operators" json:"assigned_operators"`
+	CreatedAt         time.Time          `bson:"created_at" json:"created_at"`
+	CreatedBy         string             `bson:"created_by,omitempty" json:"created_by,omitempty"`
 	// Status is open or closed (legacy documents with no field are treated as open).
 	Status string `bson:"status,omitempty" json:"status,omitempty"`
 	// Notes is free-form operator text (scope, reminders, handoff).
 	Notes string `bson:"notes,omitempty" json:"notes,omitempty"`
+	// AttackTacticNotes maps enterprise ATT&CK tactic keys (Navigator shortnames) to operator notes.
+	AttackTacticNotes map[string]string `bson:"attack_tactic_notes,omitempty" json:"attack_tactic_notes,omitempty"`
 	// HaulType is interactive | short_haul | long_haul (planning / reporting category).
 	HaulType string `bson:"haul_type,omitempty" json:"haul_type,omitempty"`
 }
@@ -106,6 +110,7 @@ func InsertEngagement(ctx context.Context, e Engagement) (primitive.ObjectID, er
 		e.Status = EngagementStatusOpen
 	}
 	e.HaulType = NormalizeEngagementHaulType(e.HaulType)
+	e.AttackTacticNotes = mitreattack.NormalizeTacticNotes(e.AttackTacticNotes)
 	res, err := EngagementsCollection.InsertOne(ctx, e)
 	if err != nil {
 		return primitive.NilObjectID, err
@@ -210,10 +215,11 @@ func EngagementIsOpen(e *Engagement) bool {
 
 // EngagementPatch is a partial update for engagements.
 type EngagementPatch struct {
-	Status             *string   // "open" | "closed", or nil to skip
-	Notes              *string   // nil = skip; empty string clears notes
-	HaulType           *string   // nil = skip; validated when set
-	AssignedOperators  *[]string // nil = skip; replaces list; each user must exist and not be disabled
+	Status            *string            // "open" | "closed", or nil to skip
+	Notes             *string            // nil = skip; empty string clears notes
+	AttackTacticNotes *map[string]string // nil = skip; empty map clears tactic notes
+	HaulType          *string            // nil = skip; validated when set
+	AssignedOperators *[]string          // nil = skip; replaces list; each user must exist and not be disabled
 }
 
 // UpdateEngagement applies non-nil patch fields. Validates status when set.
@@ -236,6 +242,14 @@ func UpdateEngagement(ctx context.Context, idHex string, patch EngagementPatch) 
 	}
 	if patch.Notes != nil {
 		set["notes"] = *patch.Notes
+	}
+	if patch.AttackTacticNotes != nil {
+		norm := mitreattack.NormalizeTacticNotes(*patch.AttackTacticNotes)
+		if norm == nil {
+			set["attack_tactic_notes"] = bson.M{}
+		} else {
+			set["attack_tactic_notes"] = norm
+		}
 	}
 	if patch.HaulType != nil {
 		h := strings.ToLower(strings.TrimSpace(*patch.HaulType))

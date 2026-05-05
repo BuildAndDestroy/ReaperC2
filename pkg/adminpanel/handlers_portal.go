@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"ReaperC2/pkg/dbconnections"
+	"ReaperC2/pkg/mitreattack"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -401,6 +402,7 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
   <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a> — clients table only; use JSON for command history.</p>
   <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
   <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — same 13-column Specter Ops schema as Logs: clients, saved profiles, and beacon command output (newest first).</p>
+  <p><a href="/api/reports/attack-navigator-layer?attack_version=19" download>MITRE ATT&amp;CK Navigator layer</a> — from engagement <strong>Manage</strong> notes (general + per-tactic). Default STIX <code>v19</code>; use <code>?attack_version=16</code> through <code>19</code> to match your Navigator bundle.</p>
 </div>`
 	s.writeAppPage(w, user, role, "reports", "Reports", body, eng)
 }
@@ -619,14 +621,16 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	type engagementExportSnapshot struct {
-		ID               string `json:"id"`
-		Name             string `json:"name"`
-		ClientName       string `json:"client_name"`
-		StartDate        string `json:"start_date"`
-		EndDate          string `json:"end_date"`
-		HaulType         string `json:"haul_type"`
-		HaulTypeLabel    string `json:"haul_type_label"`
-		SlackDiscordRoom string `json:"slack_discord_room,omitempty"`
+		ID                string            `json:"id"`
+		Name              string            `json:"name"`
+		ClientName        string            `json:"client_name"`
+		StartDate         string            `json:"start_date"`
+		EndDate           string            `json:"end_date"`
+		HaulType          string            `json:"haul_type"`
+		HaulTypeLabel     string            `json:"haul_type_label"`
+		SlackDiscordRoom  string            `json:"slack_discord_room,omitempty"`
+		Notes             string            `json:"notes,omitempty"`
+		AttackTacticNotes map[string]string `json:"attack_tactic_notes,omitempty"`
 	}
 	type exportBundle struct {
 		GeneratedAt   string                               `json:"generated_at"`
@@ -639,14 +643,16 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 	bundle := exportBundle{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Engagement: engagementExportSnapshot{
-			ID:               eng.ID.Hex(),
-			Name:             eng.Name,
-			ClientName:       eng.ClientName,
-			StartDate:        eng.StartDate.UTC().Format(time.RFC3339),
-			EndDate:          eng.EndDate.UTC().Format(time.RFC3339),
-			HaulType:         ht,
-			HaulTypeLabel:    dbconnections.EngagementHaulTypeLabel(ht),
-			SlackDiscordRoom: eng.SlackDiscordRoom,
+			ID:                eng.ID.Hex(),
+			Name:              eng.Name,
+			ClientName:        eng.ClientName,
+			StartDate:         eng.StartDate.UTC().Format(time.RFC3339),
+			EndDate:           eng.EndDate.UTC().Format(time.RFC3339),
+			HaulType:          ht,
+			HaulTypeLabel:     dbconnections.EngagementHaulTypeLabel(ht),
+			SlackDiscordRoom:  eng.SlackDiscordRoom,
+			Notes:             eng.Notes,
+			AttackTacticNotes: mitreattack.CompactTacticNotesForExport(eng.AttackTacticNotes),
 		},
 		Clients:       clients,
 		Profiles:      profiles,
@@ -695,6 +701,37 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 		}
 		cw.Flush()
 	}
+}
+
+func (s *Server) handleAPIReportsAttackNavigatorLayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user, role, ok := s.sessionUser(r)
+	if !ok {
+		jsonError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	eng, ok := s.engagementForAPI(w, r, user, role)
+	if !ok {
+		return
+	}
+	ver, err := mitreattack.ParseAttackVersion(r.URL.Query().Get("attack_version"))
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	layer := mitreattack.NavigatorLayer(eng.Name, navigatorLayerDescription(eng), ver)
+	raw, err := mitreattack.MarshalNavigatorLayer(layer)
+	if err != nil {
+		log.Printf("admin: marshal navigator layer (reports): %v", err)
+		jsonError(w, http.StatusInternalServerError, "export failed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+engagementNavigatorDownloadFilename(eng.Name)+`"`)
+	_, _ = w.Write(raw)
 }
 
 func (s *Server) handleAPIReportsExportGhostwriter(w http.ResponseWriter, r *http.Request) {
