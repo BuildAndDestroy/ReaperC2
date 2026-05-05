@@ -1,0 +1,39 @@
+# Container image vulnerability scan (matches harvestrangelabs.com severity gate).
+name: Trivy container scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load into Docker)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: reaperc2:trivy-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy on image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: reaperc2:trivy-ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          format: table
+          vuln-type: os,library

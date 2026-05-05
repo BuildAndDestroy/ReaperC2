@@ -1,0 +1,66 @@
+# Supply-chain checks: Go vulncheck (this repo) and npm audit when Node lockfiles exist (HRL-style layout).
+name: Security audit
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-vulncheck:
+    runs-on: ubuntu-latest
+    env:
+      # Lets go 1.23 run the latest govulncheck module (requires a newer toolchain).
+      GOTOOLCHAIN: auto
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  npm-audit:
+    # Same convention as harvestrangelabs.com (frontend/backend); extend paths if you add workspaces.
+    # hashFiles() is only valid in step expressions after checkout; detect lockfiles in a step instead.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect npm lockfiles
+        id: locks
+        run: |
+          root=0; [ -f package-lock.json ] && root=1 || true
+          fe=0; [ -f frontend/package-lock.json ] && fe=1 || true
+          be=0; [ -f backend/package-lock.json ] && be=1 || true
+          any=0
+          if [ "$root" = 1 ] || [ "$fe" = 1 ] || [ "$be" = 1 ]; then any=1; fi
+          echo "root=$root" >> "$GITHUB_OUTPUT"
+          echo "frontend=$fe" >> "$GITHUB_OUTPUT"
+          echo "backend=$be" >> "$GITHUB_OUTPUT"
+          echo "any=$any" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.locks.outputs.any == '1'
+        with:
+          node-version: "22"
+
+      - name: npm audit (repository root)
+        if: steps.locks.outputs.root == '1'
+        run: npm ci && npm audit --audit-level=moderate
+
+      - name: npm audit (frontend)
+        if: steps.locks.outputs.frontend == '1'
+        working-directory: frontend
+        run: npm ci && npm audit --audit-level=moderate
+
+      - name: npm audit (backend)
+        if: steps.locks.outputs.backend == '1'
+        working-directory: backend
+        run: npm ci && npm audit --audit-level=moderate
