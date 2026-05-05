@@ -421,13 +421,28 @@ func (s *Server) handleTopologyPage(w http.ResponseWriter, r *http.Request) {
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
 var __topoNetwork = null;
+function reaperCssVar(name, fallback) {
+  var raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+  var v = raw ? raw.trim() : '';
+  return v || fallback;
+}
 function topoNodeColor(n) {
-  var bg = '#30363d', border = '#8b949e';
-  if (n.type === 'c2') { bg = '#1f6feb'; border = '#58a6ff'; }
-  else if (n.type === 'beacon_ref') { bg = '#21262d'; border = '#6e7681'; }
-  else if (n.status === 'ok') { bg = '#238636'; border = '#3fb950'; }
-  else if (n.status === 'late') { bg = '#9e6a03'; border = '#d29922'; }
-  return { background: bg, border: border, highlight: { background: bg, border: '#e6edf3' }, hover: { background: bg, border: '#e6edf3' } };
+  var text = reaperCssVar('--text', '#f2ebd3');
+  var accent = reaperCssVar('--accent', '#c6934b');
+  var accentDim = reaperCssVar('--accent-dim', '#a67b3d');
+  var panel = reaperCssVar('--panel', '#12100c');
+  var border = reaperCssVar('--border', '#2e261c');
+  var muted = reaperCssVar('--muted', '#9a9180');
+  var okBg = reaperCssVar('--ok', '#3d7a4a');
+  var okBr = reaperCssVar('--ok-bright', '#5cb85c');
+  var lateBg = reaperCssVar('--warn-bg', '#6b4e1f');
+  var lateBr = reaperCssVar('--warn', '#d4a84b');
+  var bg = '#2a241c', br = muted;
+  if (n.type === 'c2') { bg = accentDim; br = accent; }
+  else if (n.type === 'beacon_ref') { bg = panel; br = border; }
+  else if (n.status === 'ok') { bg = okBg; br = okBr; }
+  else if (n.status === 'late') { bg = lateBg; br = lateBr; }
+  return { background: bg, border: br, highlight: { background: bg, border: text }, hover: { background: bg, border: text } };
 }
 function buildVisTooltip(n) {
   var lines = [n.label, n.id];
@@ -453,7 +468,7 @@ function renderTopology(g) {
       label: n.label.length > 28 ? n.label.slice(0, 26) + '…' : n.label,
       title: buildVisTooltip(n),
       color: topoNodeColor(n),
-      font: { color: '#e6edf3', size: 14, face: 'system-ui, sans-serif' },
+      font: { color: reaperCssVar('--text', '#f2ebd3'), size: 14, face: reaperCssVar('--font-sans', 'IBM Plex Sans, system-ui, sans-serif') },
       borderWidth: n.type === 'beacon_ref' ? 2 : 1,
       shape: n.type === 'c2' ? 'box' : 'ellipse'
     });
@@ -466,7 +481,7 @@ function renderTopology(g) {
       from: e.from,
       to: e.to,
       arrows: { to: { enabled: true, scaleFactor: 0.6 } },
-      color: { color: '#6e7681', highlight: '#8b949e', hover: '#8b949e' },
+      color: { color: reaperCssVar('--muted', '#9a9180'), highlight: reaperCssVar('--accent-dim', '#a67b3d'), hover: reaperCssVar('--accent', '#c6934b') },
       smooth: { type: 'cubicBezier', forceDirection: 'none', roundness: 0.35 }
     });
   }
