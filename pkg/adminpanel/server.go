@@ -39,6 +39,8 @@ func NewServer() *Server {
 	s.router.HandleFunc("/api/engagements/active", s.handleAPIEngagementsActivePOST).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/engagements/{id}", s.handleAPIEngagementByID).Methods(http.MethodGet, http.MethodPatch)
 	s.router.HandleFunc("/api/engagements/{id}/attack-navigator-layer", s.handleAPIEngagementAttackNavigatorLayer).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/attack/matrix-tactics", s.handleAPIMatrixTactics).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/attack/matrix-techniques", s.handleAPIMatrixTechniques).Methods(http.MethodGet)
 
 	s.router.HandleFunc("/api/beacons", s.handleCreateBeacon).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/beacons/scythe-embedded", s.handleAPIScytheEmbedded).Methods(http.MethodPost)
@@ -69,6 +71,7 @@ func NewServer() *Server {
 	s.router.HandleFunc("/commands", s.handleCommandsPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/reports", s.handleReportsPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/topology", s.handleTopologyPage).Methods(http.MethodGet)
+	s.router.HandleFunc("/notes", s.handleEngagementNotesPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/chat", s.handleChatPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/users", s.handleUsersPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/logs", s.handleLogsPage).Methods(http.MethodGet)
