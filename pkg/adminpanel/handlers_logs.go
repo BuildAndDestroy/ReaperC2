@@ -40,9 +40,41 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 	body := `
 <h1>All audit logs</h1>
 <p class="muted">Every engagement and global events (e.g. user creation, full exports). Beacon rows include <strong>Engagement</strong> when known. For one engagement only, use <a href="/engagement/logs">Engagement logs</a>. Details may truncate; JSON export has full text (includes <code>operator_chat</code>).</p>
+<style>
+.logs-export-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; max-width: 48rem; }
+@media (min-width: 640px) { .logs-export-grid { grid-template-columns: 1fr 1fr; } }
+.log-card-head { display: flex; gap: .85rem; align-items: flex-start; margin: 0 0 .65rem; }
+.log-card-head h2 { margin: 0; font-size: 1.05rem; }
+.log-card-icon { flex-shrink: 0; width: 48px; height: 48px; border-radius: 10px; background: var(--input-bg); border: 1px solid var(--border); padding: 6px; display: flex; align-items: center; justify-content: center; }
+.log-card-icon svg { width: 100%; height: 100%; display: block; }
+</style>
+<div class="logs-export-grid">
 <div class="card">
+  <div class="log-card-head">
+    <div class="log-card-icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <path fill="var(--accent)" opacity=".35" d="M8 6h18l10 10v26a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/>
+        <path stroke="var(--accent)" stroke-width="1.5" d="M26 6v10h10"/>
+        <path fill="var(--muted)" d="M12 28h24v2H12zm0 6h16v2H12z"/>
+      </svg>
+    </div>
+    <h2>JSON export</h2>
+  </div>
   <p><a href="/api/logs/export" download="reaperc2-audit-log.json"><strong>Download full audit log (JSON)</strong></a> — up to 50k newest entries.</p>
-  <p><a href="/api/logs/export-ghostwriter" download="reaperc2-ghostwriter.csv"><strong>Ghostwriter CSV</strong></a> — Specter Ops Ghostwriter import format (audit + beacon command results + operator chat, newest first).</p>
+</div>
+<div class="card">
+  <div class="log-card-head">
+    <div class="log-card-icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path fill="var(--accent)" opacity=".2" d="M24 4c-8 0-14 6-14 14v18l6-4 6 4 6-4 6 4V18c0-8-6-14-14-14z"/>
+        <circle cx="17" cy="17" r="2.5" fill="var(--text)"/><circle cx="31" cy="17" r="2.5" fill="var(--text)"/>
+        <path fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" d="M18 36h12M14 40h20"/>
+      </svg>
+    </div>
+    <h2>Ghostwriter</h2>
+  </div>
+  <p><a href="/api/logs/export-ghostwriter" download="reaperc2-ghostwriter.csv"><strong>Ghostwriter CSV</strong></a> — Specter Ops import (audit + beacon results + operator chat, newest first).</p>
+</div>
 </div>
 <div class="card">
   <h2>Recent (500)</h2>
@@ -123,7 +155,23 @@ func (s *Server) handleEngagementLogsPage(w http.ResponseWriter, r *http.Request
 	body := `
 <h1>Engagement audit logs</h1>
 <p class="muted">Events for <strong>` + title + `</strong> (` + template.HTMLEscapeString(eng.ClientName) + `) only — beacon deliveries, command output, queued commands, report exports, etc. Admins can also open <a href="/logs">All logs</a>.</p>
+<style>
+.englog-card-head { display: flex; gap: .85rem; align-items: flex-start; margin: 0 0 .65rem; }
+.englog-card-head h2 { margin: 0; font-size: 1.05rem; }
+.englog-card-icon { flex-shrink: 0; width: 48px; height: 48px; border-radius: 10px; background: var(--input-bg); border: 1px solid var(--border); padding: 6px; display: flex; align-items: center; justify-content: center; }
+.englog-card-icon svg { width: 100%; height: 100%; display: block; }
+</style>
 <div class="card">
+  <div class="englog-card-head">
+    <div class="englog-card-icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <path fill="var(--accent)" opacity=".35" d="M8 6h18l10 10v26a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/>
+        <path stroke="var(--accent)" stroke-width="1.5" d="M26 6v10h10"/>
+        <path fill="var(--muted)" d="M12 28h24v2H12zm0 6h16v2H12z"/>
+      </svg>
+    </div>
+    <h2>JSON export</h2>
+  </div>
   <p><a href="/api/logs/engagement/export" download="reaperc2-audit-log-engagement.json"><strong>Download this engagement (JSON)</strong></a> — audit rows for this engagement only (up to 50k).</p>
 </div>
 <div class="card">

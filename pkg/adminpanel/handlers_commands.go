@@ -421,7 +421,7 @@ func (s *Server) handleAPIBeaconCommandsPOST(w http.ResponseWriter, r *http.Requ
 		}}
 		auditPreview = "upload:" + remote + " (staging)"
 
-	case req.CommandObj != nil && len(req.CommandObj) > 0:
+	case len(req.CommandObj) > 0:
 		toQueue = []interface{}{req.CommandObj}
 		b, _ := json.Marshal(req.CommandObj)
 		auditPreview = string(b)

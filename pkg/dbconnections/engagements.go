@@ -84,6 +84,8 @@ type Engagement struct {
 	Notes string `bson:"notes,omitempty" json:"notes,omitempty"`
 	// AttackTacticNotes maps enterprise ATT&CK tactic keys (Navigator shortnames) to operator notes.
 	AttackTacticNotes map[string]string `bson:"attack_tactic_notes,omitempty" json:"attack_tactic_notes,omitempty"`
+	// AttackTechniques lists technique IDs under tactics with per-technique notes (Navigator layer annotations).
+	AttackTechniques []mitreattack.TechniqueTag `bson:"attack_techniques,omitempty" json:"attack_techniques,omitempty"`
 	// HaulType is interactive | short_haul | long_haul (planning / reporting category).
 	HaulType string `bson:"haul_type,omitempty" json:"haul_type,omitempty"`
 }
@@ -111,6 +113,11 @@ func InsertEngagement(ctx context.Context, e Engagement) (primitive.ObjectID, er
 	}
 	e.HaulType = NormalizeEngagementHaulType(e.HaulType)
 	e.AttackTacticNotes = mitreattack.NormalizeTacticNotes(e.AttackTacticNotes)
+	tags, err := mitreattack.NormalizeTechniqueTags(e.AttackTechniques)
+	if err != nil {
+		return primitive.NilObjectID, err
+	}
+	e.AttackTechniques = tags
 	res, err := EngagementsCollection.InsertOne(ctx, e)
 	if err != nil {
 		return primitive.NilObjectID, err
@@ -215,11 +222,12 @@ func EngagementIsOpen(e *Engagement) bool {
 
 // EngagementPatch is a partial update for engagements.
 type EngagementPatch struct {
-	Status            *string            // "open" | "closed", or nil to skip
-	Notes             *string            // nil = skip; empty string clears notes
-	AttackTacticNotes *map[string]string // nil = skip; empty map clears tactic notes
-	HaulType          *string            // nil = skip; validated when set
-	AssignedOperators *[]string          // nil = skip; replaces list; each user must exist and not be disabled
+	Status            *string                     // "open" | "closed", or nil to skip
+	Notes             *string                     // nil = skip; empty string clears notes
+	AttackTacticNotes *map[string]string          // nil = skip; empty map clears tactic notes
+	AttackTechniques  *[]mitreattack.TechniqueTag // nil = skip; empty slice clears technique tags
+	HaulType          *string                     // nil = skip; validated when set
+	AssignedOperators *[]string                   // nil = skip; replaces list; each user must exist and not be disabled
 }
 
 // UpdateEngagement applies non-nil patch fields. Validates status when set.
@@ -249,6 +257,17 @@ func UpdateEngagement(ctx context.Context, idHex string, patch EngagementPatch) 
 			set["attack_tactic_notes"] = bson.M{}
 		} else {
 			set["attack_tactic_notes"] = norm
+		}
+	}
+	if patch.AttackTechniques != nil {
+		tags, err := mitreattack.NormalizeTechniqueTags(*patch.AttackTechniques)
+		if err != nil {
+			return err
+		}
+		if len(tags) == 0 {
+			set["attack_techniques"] = []interface{}{}
+		} else {
+			set["attack_techniques"] = tags
 		}
 	}
 	if patch.HaulType != nil {

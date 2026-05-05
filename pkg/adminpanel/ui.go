@@ -18,9 +18,17 @@ func themeBootScript() string {
 }
 
 func navItem(href, label, active, slug string) string {
+	return navItemClass(href, label, active, slug, "")
+}
+
+// navItemClass is like navItem but adds extra CSS classes (e.g. nav-account-end).
+func navItemClass(href, label, active, slug, extraClass string) string {
 	cls := "nav-item"
 	if active == slug {
 		cls += " active"
+	}
+	if extraClass != "" {
+		cls += " " + extraClass
 	}
 	return fmt.Sprintf(`<a class="%s" href="%s">%s</a>`, cls, href, template.HTMLEscapeString(label))
 }
@@ -120,7 +128,7 @@ aside .brand { font-weight: 700; padding: 0 1rem 1rem; border-bottom: 1px solid 
   display: inline-block; margin-right: .5rem; padding: .12rem .45rem; font-size: .72rem; font-weight: 600;
   border-radius: 2px; background: var(--pill-bg); color: var(--pill-fg);
 }
-dialog.eng-manage-dialog { max-width: 36rem; width: calc(100vw - 2rem); border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); padding: 1.25rem; }
+dialog.eng-manage-dialog { max-width: 44rem; width: calc(100vw - 2rem); border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); padding: 1.25rem; }
 dialog.eng-manage-dialog::backdrop { background: rgba(0,0,0,.55); }
 html[data-theme="light"] dialog.eng-manage-dialog::backdrop { background: rgba(31, 26, 18, 0.35); }
 dialog.eng-manage-dialog h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
@@ -131,7 +139,12 @@ aside .nav-item {
 }
 aside .nav-item:hover { background: var(--nav-hover); }
 aside .nav-item.active { background: var(--nav-active); border-left-color: var(--accent); color: var(--accent); }
-aside .foot { margin-top: auto; padding: 1rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--border); }
+aside .nav-item.nav-account-end {
+  margin-top: auto;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+}
+aside .foot { margin-top: 0; padding: 1rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--border); }
 aside .foot .foot-theme { margin-bottom: .65rem; }
 aside .foot form { margin: 0; }
 aside .foot button[type="submit"] { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
@@ -265,14 +278,15 @@ details.cmd-fold[open] summary::before { content: "▾ "; }
   <div class="brand">ReaperC2</div>
 ` + engagementBannerHTML + `
 ` + navItem("/engagements", "Engagements", active, "engagements") + `
-` + navItem("/account", "Account", active, "account") + `
 ` + navItem("/beacons", "Beacons", active, "beacons") + `
 ` + navItem("/commands", "Commands", active, "commands") + `
 ` + navItem("/reports", "Reports", active, "reports") + `
 ` + navItem("/topology", "Topology", active, "topology") + `
+` + navItem("/notes", "Notes & ATT&CK", active, "notes") + `
 ` + navItem("/chat", "Chat", active, "chat") + `
 ` + engagementNav + `
 ` + adminNav + `
+` + navItemClass("/account", "Account", active, "account", "nav-account-end") + `
   <div class="foot">
     <div class="foot-theme"><button type="button" class="theme-toggle" id="reaper-theme-toggle" aria-label="Switch color theme">Theme</button></div>
     <div>` + foot + `</div>

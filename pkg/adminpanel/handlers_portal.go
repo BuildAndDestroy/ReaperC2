@@ -395,15 +395,128 @@ func (s *Server) handleReportsPage(w http.ResponseWriter, r *http.Request) {
 	body := `
 <h1>Reports</h1>
 <p class="muted">Export snapshots for briefings. Secrets can be redacted for wider distribution.</p>
-<div class="card">
-  <h2>Export</h2>
-  <p><a href="/api/reports/export?format=json&redact=1" download>Download JSON (redacted)</a></p>
-  <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes an <code>engagement</code> block (name, dates, <strong>haul type</strong>), profile secrets, and beacon command output; protect accordingly. JSON includes <code>command_output</code> (newest 5000 rows from the data collection). Operator chat is under <strong>Logs</strong> exports, not here.</p>
-  <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a> — clients table only; use JSON for command history.</p>
-  <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
-  <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — same 13-column Specter Ops schema as Logs: clients, saved profiles, and beacon command output (newest first).</p>
-  <p><a href="/api/reports/attack-navigator-layer?attack_version=19" download>MITRE ATT&amp;CK Navigator layer</a> — from engagement <strong>Manage</strong> notes (general + per-tactic). Default STIX <code>v19</code>; use <code>?attack_version=16</code> through <code>19</code> to match your Navigator bundle.</p>
-</div>`
+<style>
+.report-export-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; max-width: 42rem; }
+@media (min-width: 720px) {
+  .report-export-grid { grid-template-columns: 1fr 1fr; max-width: 56rem; align-items: stretch; }
+  .report-export-span2 { grid-column: 1 / -1; }
+}
+.report-card-head { display: flex; gap: 1rem; align-items: flex-start; margin: 0 0 .85rem; }
+.report-card-head h2 { margin: 0 0 .35rem; font-size: 1.05rem; color: var(--text); }
+.report-card-icon {
+  flex-shrink: 0; width: 52px; height: 52px; border-radius: 10px; background: var(--input-bg);
+  border: 1px solid var(--border); padding: 6px; display: flex; align-items: center; justify-content: center;
+}
+.report-card-icon svg { width: 100%; height: 100%; display: block; }
+.report-export-card .report-card-body p { margin: 0 0 .65rem; }
+.report-export-card .report-card-body p:last-child { margin-bottom: 0; }
+.report-mitre-row { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: .65rem; align-items: flex-end; }
+</style>
+<div class="report-export-grid">
+<div class="card report-export-card">
+  <div class="report-card-head">
+    <div class="report-card-icon" title="JSON export" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <path fill="var(--accent)" opacity=".35" d="M8 6h18l10 10v26a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/>
+        <path stroke="var(--accent)" stroke-width="1.5" d="M26 6v10h10"/>
+        <path fill="var(--muted)" d="M12 28h24v2H12zm0 6h16v2H12zm0 6h20v2H12z"/>
+      </svg>
+    </div>
+    <div>
+      <h2>JSON</h2>
+      <p class="muted" style="font-size:.82rem;margin:0;line-height:1.4">Structured bundle: engagement, clients, profiles, and command output.</p>
+    </div>
+  </div>
+  <div class="report-card-body">
+    <p><a href="/api/reports/export?format=json&redact=1" download>Download JSON (redacted)</a></p>
+    <p><a href="/api/reports/export?format=json" download>Download JSON (full)</a> — includes an <code>engagement</code> block (name, dates, <strong>haul type</strong>, notes, tactic notes), profile secrets, and beacon command output; protect accordingly. Includes <code>command_output</code> (newest 5000 rows). Operator chat is under <strong>Logs</strong> exports, not here.</p>
+  </div>
+</div>
+<div class="card report-export-card">
+  <div class="report-card-head">
+    <div class="report-card-icon" title="CSV export" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <rect x="6" y="8" width="36" height="32" rx="3" stroke="var(--accent)" stroke-width="1.5" fill="var(--input-bg)"/>
+        <path stroke="var(--muted)" stroke-width="1.25" d="M6 18h36M6 28h36M18 8v32"/>
+        <circle cx="12" cy="13" r="1.5" fill="var(--accent)"/><circle cx="12" cy="23" r="1.5" fill="var(--accent-dim)"/><circle cx="12" cy="33" r="1.5" fill="var(--muted)"/>
+      </svg>
+    </div>
+    <div>
+      <h2>CSV</h2>
+      <p class="muted" style="font-size:.82rem;margin:0;line-height:1.4">Spreadsheet-friendly clients table only.</p>
+    </div>
+  </div>
+  <div class="report-card-body">
+    <p><a href="/api/reports/export?format=csv&redact=1" download>Download CSV (redacted)</a></p>
+    <p class="muted" style="font-size:.85rem">Use JSON above for full command history.</p>
+  </div>
+</div>
+<div class="card report-export-card report-export-span2">
+  <div class="report-card-head">
+    <div class="report-card-icon" title="Ghostwriter" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path fill="var(--accent)" opacity=".2" d="M24 4c-8 0-14 6-14 14v18l6-4 6 4 6-4 6 4V18c0-8-6-14-14-14z"/>
+        <circle cx="17" cy="17" r="2.5" fill="var(--text)"/><circle cx="31" cy="17" r="2.5" fill="var(--text)"/>
+        <path fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" d="M18 36h12M14 40h20"/>
+      </svg>
+    </div>
+    <div>
+      <h2>Ghostwriter</h2>
+      <p class="muted" style="font-size:.82rem;margin:0;line-height:1.4">Specter Ops 13-column CSV — same schema as <strong>Logs → Ghostwriter</strong>.</p>
+    </div>
+  </div>
+  <div class="report-card-body">
+    <p><a href="/api/reports/export-ghostwriter?redact=1" download>Ghostwriter CSV (redacted)</a></p>
+    <p><a href="/api/reports/export-ghostwriter" download>Ghostwriter CSV (full)</a> — clients, saved profiles, and beacon command output (newest first).</p>
+  </div>
+</div>
+<div class="card report-export-card report-export-span2">
+  <div class="report-card-head">
+    <div class="report-card-icon" title="MITRE ATT&amp;CK" aria-hidden="true">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="6" width="40" height="36" rx="3" fill="var(--input-bg)" stroke="var(--border)"/>
+        <rect x="8" y="10" width="9" height="7" rx="1" fill="#c94c4c"/><rect x="19.5" y="10" width="9" height="7" rx="1" fill="#d4a84b"/>
+        <rect x="31" y="10" width="9" height="7" rx="1" fill="#5a8f5a"/>
+        <rect x="8" y="20" width="9" height="7" rx="1" fill="#4a7ab8"/><rect x="19.5" y="20" width="9" height="7" rx="1" fill="#8e5bb8"/>
+        <rect x="31" y="20" width="9" height="7" rx="1" fill="#c6934b"/>
+        <rect x="8" y="30" width="9" height="7" rx="1" fill="#5a8f5a"/><rect x="19.5" y="30" width="9" height="7" rx="1" fill="#c94c4c"/>
+        <rect x="31" y="30" width="9" height="7" rx="1" fill="#4a7ab8"/>
+      </svg>
+    </div>
+    <div>
+      <h2>MITRE ATT&amp;CK Navigator</h2>
+      <p class="muted" style="font-size:.82rem;margin:0;line-height:1.4">Layer JSON from <strong>Manage</strong>: tactic narrative, <strong>technique tags</strong> (highlighted in <code>#74c476</code> with per-technique comments), and general notes. Match STIX to your Navigator bundle.</p>
+    </div>
+  </div>
+  <div class="report-card-body">
+    <div class="report-mitre-row">
+      <div>
+        <label for="reportAtkNavVer" class="muted" style="font-size:.8rem;display:block;margin:0">STIX version</label>
+        <select id="reportAtkNavVer" style="max-width:11rem;margin-top:.2rem">
+          <option value="16">ATT&amp;CK v16</option>
+          <option value="17">ATT&amp;CK v17</option>
+          <option value="18">ATT&amp;CK v18</option>
+          <option value="19" selected>ATT&amp;CK v19</option>
+        </select>
+      </div>
+      <a id="reportAtkNavDownload" class="btn btn-secondary btn-tiny" href="#" download style="margin-top:1rem;text-decoration:none;display:inline-block">Download layer JSON</a>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+(function(){
+  function syncReportAtkNav() {
+    var sel = document.getElementById('reportAtkNavVer');
+    var a = document.getElementById('reportAtkNavDownload');
+    if (!sel || !a) return;
+    a.href = '/api/reports/attack-navigator-layer?attack_version=' + encodeURIComponent(sel.value);
+  }
+  var sel = document.getElementById('reportAtkNavVer');
+  if (sel) sel.addEventListener('change', syncReportAtkNav);
+  syncReportAtkNav();
+})();
+</script>`
 	s.writeAppPage(w, user, role, "reports", "Reports", body, eng)
 }
 
@@ -621,16 +734,17 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	type engagementExportSnapshot struct {
-		ID                string            `json:"id"`
-		Name              string            `json:"name"`
-		ClientName        string            `json:"client_name"`
-		StartDate         string            `json:"start_date"`
-		EndDate           string            `json:"end_date"`
-		HaulType          string            `json:"haul_type"`
-		HaulTypeLabel     string            `json:"haul_type_label"`
-		SlackDiscordRoom  string            `json:"slack_discord_room,omitempty"`
-		Notes             string            `json:"notes,omitempty"`
-		AttackTacticNotes map[string]string `json:"attack_tactic_notes,omitempty"`
+		ID                string                     `json:"id"`
+		Name              string                     `json:"name"`
+		ClientName        string                     `json:"client_name"`
+		StartDate         string                     `json:"start_date"`
+		EndDate           string                     `json:"end_date"`
+		HaulType          string                     `json:"haul_type"`
+		HaulTypeLabel     string                     `json:"haul_type_label"`
+		SlackDiscordRoom  string                     `json:"slack_discord_room,omitempty"`
+		Notes             string                     `json:"notes,omitempty"`
+		AttackTacticNotes map[string]string          `json:"attack_tactic_notes,omitempty"`
+		AttackTechniques  []mitreattack.TechniqueTag `json:"attack_techniques,omitempty"`
 	}
 	type exportBundle struct {
 		GeneratedAt   string                               `json:"generated_at"`
@@ -653,6 +767,7 @@ func (s *Server) handleAPIReportsExport(w http.ResponseWriter, r *http.Request) 
 			SlackDiscordRoom:  eng.SlackDiscordRoom,
 			Notes:             eng.Notes,
 			AttackTacticNotes: mitreattack.CompactTacticNotesForExport(eng.AttackTacticNotes),
+			AttackTechniques:  eng.AttackTechniques,
 		},
 		Clients:       clients,
 		Profiles:      profiles,
@@ -723,6 +838,7 @@ func (s *Server) handleAPIReportsAttackNavigatorLayer(w http.ResponseWriter, r *
 		return
 	}
 	layer := mitreattack.NavigatorLayer(eng.Name, navigatorLayerDescription(eng), ver)
+	mitreattack.ApplyTechniquesToNavigatorLayer(layer, eng.AttackTechniques)
 	raw, err := mitreattack.MarshalNavigatorLayer(layer)
 	if err != nil {
 		log.Printf("admin: marshal navigator layer (reports): %v", err)
