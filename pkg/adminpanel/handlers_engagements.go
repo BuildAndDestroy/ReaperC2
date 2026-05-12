@@ -104,16 +104,16 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		if o.Username == "" || dbconnections.OperatorIsDisabled(&o) {
 			continue
 		}
-		opChecks.WriteString(`<label style="display:block;margin:.35rem 0"><input type="checkbox" name="op" value="`)
+		opChecks.WriteString(`<label class="eng-op-check"><input type="checkbox" name="op" value="`)
 		opChecks.WriteString(template.HTMLEscapeString(o.Username))
-		opChecks.WriteString(`"> `)
+		opChecks.WriteString(`"><span class="eng-op-check-box" aria-hidden="true"></span><span class="eng-op-check-text">`)
 		opChecks.WriteString(template.HTMLEscapeString(o.Username))
 		if o.Role != "" {
 			opChecks.WriteString(` <span class="muted">(`)
 			opChecks.WriteString(template.HTMLEscapeString(o.Role))
 			opChecks.WriteString(`)</span>`)
 		}
-		opChecks.WriteString(`</label>`)
+		opChecks.WriteString(`</span></label>`)
 	}
 	body := `
 <h1>Engagements</h1>
@@ -140,7 +140,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
     <label>Assigned operators</label>
     <p class="muted" style="font-size:.82rem;margin:.25rem 0 .35rem">Administrators only: choose which operators can open this workspace. Admins always have access.</p>
-    <div id="engDlgOpChecks" style="margin-top:.35rem"></div>
+    <div id="engDlgOpChecks" class="eng-op-checks"></div>
   </div>
   <p id="engDlgMsg" class="cmd-inline-msg muted"></p>
   <div class="dlg-actions">
@@ -164,13 +164,12 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
     <option value="short_haul">Short Haul</option>
     <option value="long_haul">Long Haul</option>
   </select>
-  <p class="muted" style="font-size:.82rem;margin:.25rem 0 0">Used for engagement planning and included in report exports.</p>
   <label>Slack / Discord room name</label>
   <input id="enRoom" placeholder="e.g. #acme-2026-ops — used as chat room key">
   <label>Notes (optional)</label>
   <textarea id="enNotes" rows="3" placeholder="Initial scope or reminders"></textarea>
   <label>Assigned operators</label>
-  <div id="opChecks" style="margin-top:.35rem">` + opChecks.String() + `</div>
+  <div id="opChecks" class="eng-op-checks">` + opChecks.String() + `</div>
   <p class="muted" style="font-size:.85rem">Operators listed here can open this engagement. Admins can access every engagement.</p>
   <button type="button" class="btn" id="enCreate">Create</button>
   <p id="enMsg" class="cmd-inline-msg muted"></p>
@@ -178,6 +177,68 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 <style>
 .eng-st-open { color: var(--ok-bright); font-weight: 600; font-size: .85rem; }
 .eng-st-closed { color: var(--muted); font-weight: 600; font-size: .85rem; }
+.eng-op-checks { margin-top: .35rem; max-width: 100%; }
+label.eng-op-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.12rem 0;
+  padding: 0.15rem 0;
+  cursor: pointer;
+  max-width: 32rem;
+  position: relative;
+}
+label.eng-op-check input[type="checkbox"] {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+label.eng-op-check .eng-op-check-box {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--input-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+label.eng-op-check:hover .eng-op-check-box {
+  border-color: var(--accent);
+  background: var(--nav-hover);
+}
+label.eng-op-check input:focus-visible + .eng-op-check-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+label.eng-op-check input:checked + .eng-op-check-box {
+  background: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+label.eng-op-check input:checked + .eng-op-check-box::after {
+  content: "";
+  width: 0.28rem;
+  height: 0.45rem;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-bottom: 2px;
+  border-radius: 0 1px 0 0;
+}
+label.eng-op-check .eng-op-check-text {
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
 </style>
 <script>
 window.__REAPER_IS_ADMIN__ = ` + map[bool]string{true: "true", false: "false"}[isAdminUser] + `;
@@ -198,20 +259,26 @@ function buildEngDlgOps(j) {
   (window.ENG_OPS_META || []).forEach(function(op) {
     if (op.disabled) return;
     var lab = document.createElement('label');
-    lab.style.display = 'block';
-    lab.style.margin = '.35rem 0';
+    lab.className = 'eng-op-check';
     var inp = document.createElement('input');
     inp.type = 'checkbox';
     inp.value = op.username;
     if (assigned[op.username]) inp.checked = true;
-    lab.appendChild(inp);
-    lab.appendChild(document.createTextNode(' ' + op.username));
+    var chkBox = document.createElement('span');
+    chkBox.className = 'eng-op-check-box';
+    chkBox.setAttribute('aria-hidden', 'true');
+    var txt = document.createElement('span');
+    txt.className = 'eng-op-check-text';
+    txt.appendChild(document.createTextNode(op.username));
     if (op.role) {
       var sp = document.createElement('span');
       sp.className = 'muted';
       sp.textContent = ' (' + op.role + ')';
-      lab.appendChild(sp);
+      txt.appendChild(sp);
     }
+    lab.appendChild(inp);
+    lab.appendChild(chkBox);
+    lab.appendChild(txt);
     box.appendChild(lab);
   });
 }
