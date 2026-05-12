@@ -41,7 +41,7 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 <h1>All audit logs</h1>
 <p class="muted">Every engagement and global events (e.g. user creation, full exports). Beacon rows include <strong>Engagement</strong> when known. For one engagement only, use <a href="/engagement/logs">Engagement logs</a>. Details may truncate; JSON export has full text (includes <code>operator_chat</code>).</p>
 <style>
-.logs-export-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; max-width: 48rem; }
+.logs-export-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; width: 100%; max-width: 100%; }
 @media (min-width: 640px) { .logs-export-grid { grid-template-columns: 1fr 1fr; } }
 .log-card-head { display: flex; gap: .85rem; align-items: flex-start; margin: 0 0 .65rem; }
 .log-card-head h2 { margin: 0; font-size: 1.05rem; }
@@ -78,7 +78,7 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 </div>
 <div class="card">
   <h2>Recent (500)</h2>
-  <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Engagement</th><th>Details</th></tr></thead><tbody>` + tbl + `</tbody></table>
+  <table class="audit-log-table audit-log-table--all"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Engagement</th><th>Details</th></tr></thead><tbody>` + tbl + `</tbody></table>
 </div>`
 	s.writeAppPage(w, u, role, "logs", "All logs", body, nil)
 }
@@ -118,7 +118,7 @@ func buildAuditLogTableHTML(entries []dbconnections.AuditLogEntry, showEngagemen
 			tbl.WriteString(template.HTMLEscapeString(engCell))
 			tbl.WriteString("</td>")
 		}
-		tbl.WriteString(`<td class="mono">`)
+		tbl.WriteString(`<td class="mono audit-log-details">`)
 		tbl.WriteString(template.HTMLEscapeString(detail))
 		tbl.WriteString("</td></tr>")
 	}
@@ -176,7 +176,7 @@ func (s *Server) handleEngagementLogsPage(w http.ResponseWriter, r *http.Request
 </div>
 <div class="card">
   <h2>Recent (500)</h2>
-  <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>` + tbl + `</tbody></table>
+  <table class="audit-log-table audit-log-table--eng"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>` + tbl + `</tbody></table>
 </div>`
 	s.writeAppPage(w, u, role, "englogs", "Engagement logs", body, eng)
 }

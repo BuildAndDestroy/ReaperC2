@@ -21,6 +21,18 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// beaconEmbeddedHostRunHTML documents the TERM_HARVEST gate for compiled Scythe.embedded binaries
+// (see Scythe pkg/userinput/embedded.go). Shown on the Beacons page and under each saved profile.
+const beaconEmbeddedHostRunHTML = `<details class="beacon-run-host"><summary><strong>Run embedded binary on the host</strong> (<code>TERM_HARVEST=9</code>)</summary>
+<p class="muted" style="font-size:.85rem;margin:.5rem 0">The binary expects this environment variable before it starts the embedded beacon. Examples use <code>Scythe</code> as the program name; use your path if the file is named differently (e.g. <code>Scythe.embedded</code> right after download).</p>
+<ul class="muted" style="font-size:.85rem;margin:0;padding-left:1.25rem;line-height:1.55">
+<li><strong>Linux</strong> — <code>export TERM_HARVEST=9 &amp;&amp; ./Scythe</code></li>
+<li><strong>macOS (Darwin)</strong> — <code>export TERM_HARVEST=9 &amp;&amp; ./Scythe</code></li>
+<li><strong>Windows CMD</strong> — <code>set TERM_HARVEST=9 &amp;&amp; .\Scythe.exe</code></li>
+<li><strong>Windows PowerShell</strong> — <code>$env:TERM_HARVEST='9'; .\Scythe.exe</code></li>
+</ul>
+</details>`
+
 func (s *Server) writeAppPage(w http.ResponseWriter, user, role, active, title, bodyHTML string, eng *dbconnections.Engagement) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -137,6 +149,7 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`</pre><button type="button" class="btn-tiny" onclick="copyBeaconField('`)
 		rows.WriteString(idScythe)
 		rows.WriteString(`')">Copy</button></div>`)
+		rows.WriteString(beaconEmbeddedHostRunHTML)
 		rows.WriteString(`</div></details><button type="button" class="btn btn-secondary" data-embed="`)
 		rows.WriteString(template.HTMLEscapeString(p.ClientID))
 		rows.WriteString(`" title="Rebuild and download Scythe with this profile's saved Http options">Scythe.embedded</button><button type="button" class="btn btn-kill" data-kill="`)
@@ -204,7 +217,7 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <div id="embedDlWrap" style="display:none;margin-top:.75rem;max-width:520px">
     <p id="embedProgLbl" class="muted" style="margin:0 0 .35rem;font-size:.9rem"></p>
     <progress id="embedProg" max="100" style="width:100%;height:1.25rem;vertical-align:middle"></progress>
-  </div>
+  </div>` + beaconEmbeddedHostRunHTML + `
   <pre id="out" style="margin-top:1rem;display:none;"></pre>
   <p class="muted" style="margin-top:.75rem;font-size:.85rem">The JSON response also appears here until you leave the page. Saved profiles keep <strong>Client ID</strong>, <strong>secret</strong>, and URLs under <strong>View credentials</strong> after refresh.</p>
   <button type="button" class="btn btn-secondary" id="reflist" style="margin-top:.35rem">Refresh profile list</button>

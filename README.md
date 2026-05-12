@@ -168,14 +168,52 @@ docker build -t reaperc2:latest .
 
 Or rely on the Dockerfile clone: `docker build -t reaperc2:latest .` (uses `SCYTHE_GIT_REF`, default `main`). Push to your registry, then point **`deployments/k8s/**`** manifests at that tag. CI should either run **`git submodule update --init --recursive`** before **`docker build`**, or set **`--build-arg SCYTHE_GIT_REF=…`** to match the Scythe revision you intend to ship.
 
+### Kubernetes: public beacon, admin on localhost (tunnel)
+
+ReaperC2 listens on **two ports** in one process by default: the **beacon API** on **8080** and the **operator admin UI** on **8443** (see `BEACON_ADDR` / `ADMIN_ADDR` in the table below). For cluster deployments you should treat them differently:
+
+- **Beacons / Scythe:** expose **8080** to the Internet via your Ingress or load balancer (TLS termination in front of the Service is fine). The sample manifests under [`deployments/k8s/`](deployments/k8s/) wire **only** port **8080** on `reaperc2-service` to the public host.
+- **Admin panel:** do **not** put **8443** on a public Ingress or load balancer. Instead, from a trusted workstation, open a **tunnel** to **8443** on the ReaperC2 Pod or Deployment and use the UI at **`http://127.0.0.1:8443`** on that machine.
+
+**Typical: `kubectl port-forward`**
+
+```bash
+kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
+```
+
+Leave that process running, then in a browser on the same machine open **`http://127.0.0.1:8443/login`**. The admin server uses plain HTTP on that port unless you change the binary or put TLS in front of it yourself.
+
+To forward to a specific Pod (useful if the Deployment name differs):
+
+```bash
+kubectl port-forward -n reaperc2-ns pod/$(kubectl get pod -n reaperc2-ns -l app=reaperc2-deployment -o jsonpath='{.items[0].metadata.name}') 8443:8443
+```
+
+Adjust **`-n`**, **labels**, and **Deployment/Pod** names to match your YAML.
+
+**Jump host: SSH local forward after `port-forward` on the bastion**
+
+If your laptop cannot reach the Kubernetes API directly but you can SSH to a bastion that has `kubectl` and kubeconfig:
+
+1. On the bastion, run **`kubectl port-forward … 8443:8443`** as above (it listens on the bastion’s loopback).
+2. From your laptop: **`ssh -N -L 8443:127.0.0.1:8443 user@bastion.example.com`**
+3. Open **`http://127.0.0.1:8443/login`** on the laptop.
+
+**Beacon base URL for implants**
+
+Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base URL** in the UI) to the **public** origin that beacons should call—e.g. `https://c2.example.com` where your Ingress terminates and forwards to **8080**. That must **not** be `http://127.0.0.1:8443`; localhost is only for operators via the tunnel.
+
+**Optional:** set **`ADMIN_DISABLE=1`** on the workload if you want **no** admin listener at all (beacon-only); you lose the web UI unless you run a separate pattern.
+
 ### Requirements
 
 * Kubernetes Cluster
 * Traefik routing - Update routing from deployments/k8s/full-deployment.yaml if you are using something else
-* A domain for your http(s) requests
+* A domain for your http(s) requests (for **beacon** traffic to **8080**; admin **8443** should stay off public routes—use the tunnel pattern above)
 
 ### Yaml Updates
 
+* Keep **Ingress / IngressRoute** pointed only at the **beacon** Service port **8080**. Do not add a public path or listener for **8443** unless you intentionally expose the admin panel (not recommended).
 * Add your subdomain to the full-deployment.yaml
 * Add your docker registry secret to full-deployment.yaml
 * Add your secrets that match your golang binary to allow the connections to mongodb to work
