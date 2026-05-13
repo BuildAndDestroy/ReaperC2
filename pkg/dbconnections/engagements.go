@@ -2,10 +2,12 @@ package dbconnections
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"ReaperC2/pkg/mitreattack"
 
@@ -242,15 +244,68 @@ func listEngagementsWithFilter(ctx context.Context, filter bson.M) ([]Engagement
 
 const searchClosedEngagementsMax = 100
 
+// ErrInvalidEngagementClientQuery means the client-name search string failed validation (reject before building a query).
+var ErrInvalidEngagementClientQuery = errors.New("invalid engagement client search query")
+
+const maxEngagementClientSearchRunes = 200
+
+// NormalizeClientSearchQuery validates q for archived client search and returns a lowercase
+// needle for case-insensitive substring match. Allowed runes: letters, numbers, Unicode spaces,
+// and a small set of punctuation used in company names; rejects control characters and regex/Mongo
+// metacharacters that could widen a pattern.
+func NormalizeClientSearchQuery(q string) (needle string, err error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", ErrInvalidEngagementClientQuery
+	}
+	if utf8.RuneCountInString(q) > maxEngagementClientSearchRunes {
+		return "", fmt.Errorf("%w: too long (max %d characters)", ErrInvalidEngagementClientQuery, maxEngagementClientSearchRunes)
+	}
+	for _, r := range q {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
+			continue
+		}
+		if unicode.IsControl(r) {
+			return "", ErrInvalidEngagementClientQuery
+		}
+		switch r {
+		case '-', '_', '.', ',', '&', '\'', '(', ')', '/', '+', '#':
+			continue
+		default:
+			return "", ErrInvalidEngagementClientQuery
+		}
+	}
+	return strings.ToLower(q), nil
+}
+
+// clientNameContainsNeedle matches client_name containing needle case-insensitively without $regex on user input.
+func clientNameContainsNeedle(needle string) bson.M {
+	return bson.M{
+		"$expr": bson.M{
+			"$gte": bson.A{
+				bson.M{"$indexOfBytes": bson.A{
+					bson.M{"$toLower": "$client_name"},
+					needle,
+				}},
+				0,
+			},
+		},
+	}
+}
+
 // SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
 func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return nil, nil
 	}
+	needle, err := NormalizeClientSearchQuery(q)
+	if err != nil {
+		return nil, err
+	}
 	vis := engagementVisibilityFilter(role, username)
 	closed := bson.M{"status": bson.M{"$regex": `^closed$`, "$options": "i"}}
-	client := bson.M{"client_name": bson.M{"$regex": regexp.QuoteMeta(q), "$options": "i"}}
+	client := clientNameContainsNeedle(needle)
 	var filter bson.M
 	if len(vis) == 0 {
 		filter = bson.M{"$and": bson.A{closed, client}}

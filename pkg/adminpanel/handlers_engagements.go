@@ -501,8 +501,8 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 			jsonError(w, http.StatusBadRequest, "query parameter q (client name substring) is required when archived=1")
 			return
 		}
-		if len(q) > 200 {
-			jsonError(w, http.StatusBadRequest, "q too long")
+		if _, err := dbconnections.NormalizeClientSearchQuery(q); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		list, err = dbconnections.SearchClosedEngagementsByClient(ctx, role, user, q)
@@ -510,6 +510,10 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 		list, err = dbconnections.ListOpenEngagementsForUser(ctx, role, user)
 	}
 	if err != nil {
+		if errors.Is(err, dbconnections.ErrInvalidEngagementClientQuery) {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		jsonError(w, http.StatusInternalServerError, "failed")
 		return
 	}
