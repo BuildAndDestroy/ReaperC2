@@ -25,13 +25,15 @@ permissions:
 
 jobs:
   sync:
-    if: ${{ secrets.WIKI_PUSH_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      WIKI_PUSH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Checkout wiki
+        if: env.WIKI_PUSH_TOKEN != ''
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository }}.wiki
@@ -39,6 +41,7 @@ jobs:
           token: ${{ secrets.WIKI_PUSH_TOKEN }}
 
       - name: Copy Markdown to wiki
+        if: env.WIKI_PUSH_TOKEN != ''
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -53,6 +56,7 @@ jobs:
           perl -pi -e 's|\(/documentation/([a-z0-9-]+)\)|($1)|g' wiki/*.md
 
       - name: Commit and push wiki
+        if: env.WIKI_PUSH_TOKEN != ''
         run: |
           set -euo pipefail
           cd wiki
