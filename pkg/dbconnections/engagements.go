@@ -244,9 +244,9 @@ func listEngagementsWithFilter(ctx context.Context, filter bson.M) ([]Engagement
 
 const searchClosedEngagementsMax = 100
 
-// searchClosedEngagementsScanCap bounds how many newest closed engagements we scan in memory
-// when matching client_name. The Mongo filter is constant (no user-controlled BSON); visibility
-// and substring checks run in Go (see SearchClosedEngagementsByClient).
+// searchClosedEngagementsScanCap bounds how many newest closed engagements we read from Mongo
+// before applying visibility and optional client substring in Go. The Find filter is constant
+// (closed status only; no user-controlled BSON).
 const searchClosedEngagementsScanCap = 4000
 
 // ErrInvalidEngagementClientQuery means the client-name search string failed validation (reject before building a query).
@@ -283,20 +283,10 @@ func NormalizeClientSearchQuery(q string) (needle string, err error) {
 	return strings.ToLower(q), nil
 }
 
-// SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
-//
-// The database query uses a fixed filter (closed status only). Validated needle and RBAC
-// (UserCanAccessEngagement) are applied in application code so the Find filter does not embed
-// user-controlled BSON (satisfies static analysis and avoids regex on user input).
-func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
-	q = strings.TrimSpace(q)
-	if q == "" {
-		return nil, nil
-	}
-	needle, err := NormalizeClientSearchQuery(q)
-	if err != nil {
-		return nil, err
-	}
+// listVisibleClosedEngagements loads newest closed engagements (up to searchClosedEngagementsScanCap),
+// then returns up to searchClosedEngagementsMax that pass RBAC. If needleLower is non-empty,
+// client_name must contain that substring (case-insensitive).
+func listVisibleClosedEngagements(ctx context.Context, role, username, needleLower string) ([]Engagement, error) {
 	closed := bson.M{"status": bson.M{"$regex": `^closed$`, "$options": "i"}}
 	cur, err := EngagementsCollection.Find(ctx, closed, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(searchClosedEngagementsScanCap))
 	if err != nil {
@@ -315,12 +305,31 @@ func SearchClosedEngagementsByClient(ctx context.Context, role, username, q stri
 		if !UserCanAccessEngagement(role, username, &e) {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(e.ClientName), needle) {
+		if needleLower != "" && !strings.Contains(strings.ToLower(e.ClientName), needleLower) {
 			continue
 		}
 		out = append(out, e)
 	}
 	return out, cur.Err()
+}
+
+// ListClosedEngagementsForUser returns closed engagements visible to the user (newest first, capped).
+func ListClosedEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
+	return listVisibleClosedEngagements(ctx, role, username, "")
+}
+
+// SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
+// The database query uses a fixed filter (closed status only); RBAC and substring matching run in Go.
+func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, nil
+	}
+	needle, err := NormalizeClientSearchQuery(q)
+	if err != nil {
+		return nil, err
+	}
+	return listVisibleClosedEngagements(ctx, role, username, needle)
 }
 
 // EngagementIsOpen returns true if e is nil or status is empty/open (legacy rows).
