@@ -244,6 +244,11 @@ func listEngagementsWithFilter(ctx context.Context, filter bson.M) ([]Engagement
 
 const searchClosedEngagementsMax = 100
 
+// searchClosedEngagementsScanCap bounds how many newest closed engagements we scan in memory
+// when matching client_name. The Mongo filter is constant (no user-controlled BSON); visibility
+// and substring checks run in Go (see SearchClosedEngagementsByClient).
+const searchClosedEngagementsScanCap = 4000
+
 // ErrInvalidEngagementClientQuery means the client-name search string failed validation (reject before building a query).
 var ErrInvalidEngagementClientQuery = errors.New("invalid engagement client search query")
 
@@ -278,22 +283,11 @@ func NormalizeClientSearchQuery(q string) (needle string, err error) {
 	return strings.ToLower(q), nil
 }
 
-// clientNameContainsNeedle matches client_name containing needle case-insensitively without $regex on user input.
-func clientNameContainsNeedle(needle string) bson.M {
-	return bson.M{
-		"$expr": bson.M{
-			"$gte": bson.A{
-				bson.M{"$indexOfBytes": bson.A{
-					bson.M{"$toLower": "$client_name"},
-					needle,
-				}},
-				0,
-			},
-		},
-	}
-}
-
 // SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
+//
+// The database query uses a fixed filter (closed status only). Validated needle and RBAC
+// (UserCanAccessEngagement) are applied in application code so the Find filter does not embed
+// user-controlled BSON (satisfies static analysis and avoids regex on user input).
 func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
@@ -303,25 +297,26 @@ func SearchClosedEngagementsByClient(ctx context.Context, role, username, q stri
 	if err != nil {
 		return nil, err
 	}
-	vis := engagementVisibilityFilter(role, username)
 	closed := bson.M{"status": bson.M{"$regex": `^closed$`, "$options": "i"}}
-	client := clientNameContainsNeedle(needle)
-	var filter bson.M
-	if len(vis) == 0 {
-		filter = bson.M{"$and": bson.A{closed, client}}
-	} else {
-		filter = bson.M{"$and": bson.A{vis, closed, client}}
-	}
-	cur, err := EngagementsCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(searchClosedEngagementsMax))
+	cur, err := EngagementsCollection.Find(ctx, closed, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(searchClosedEngagementsScanCap))
 	if err != nil {
 		return nil, err
 	}
 	defer cur.Close(ctx)
 	var out []Engagement
 	for cur.Next(ctx) {
+		if len(out) >= searchClosedEngagementsMax {
+			break
+		}
 		var e Engagement
 		if err := cur.Decode(&e); err != nil {
 			return nil, err
+		}
+		if !UserCanAccessEngagement(role, username, &e) {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(e.ClientName), needle) {
+			continue
 		}
 		out = append(out, e)
 	}
