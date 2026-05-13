@@ -164,7 +164,14 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>Beacons</h1>
-<p class="muted">Generate a <code>clients</code> row and optionally save a named profile for reuse and exports. <strong>Kill</strong> queues the Scythe self-destruct command on the next heartbeat.</p>
+<p class="muted">Generate a <code>clients</code> row and optionally save a named profile for reuse and exports. <strong>Kill</strong> queues the Scythe self-destruct command on the next heartbeat. Use the tabs below to switch between generation and saved profiles.</p>
+
+<nav class="eng-top-nav" role="tablist" aria-label="Beacon views">
+  <button type="button" class="eng-tab eng-tab-active" data-beacon-tab="generate" aria-selected="true">Generate beacon</button>
+  <button type="button" class="eng-tab" data-beacon-tab="profiles" aria-selected="false">Saved profiles</button>
+</nav>
+
+<div class="eng-panel eng-panel-active" data-beacon-panel="generate" role="tabpanel">
 <div class="card">
   <h2>Generate</h2>
   <label>Display label (topology / reports)</label>
@@ -219,14 +226,88 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
     <progress id="embedProg" max="100" style="width:100%;height:1.25rem;vertical-align:middle"></progress>
   </div>` + beaconEmbeddedHostRunHTML + `
   <pre id="out" style="margin-top:1rem;display:none;"></pre>
-  <p class="muted" style="margin-top:.75rem;font-size:.85rem">The JSON response also appears here until you leave the page. Saved profiles keep <strong>Client ID</strong>, <strong>secret</strong>, and URLs under <strong>View credentials</strong> after refresh.</p>
-  <button type="button" class="btn btn-secondary" id="reflist" style="margin-top:.35rem">Refresh profile list</button>
+  <p class="muted" style="margin-top:.75rem;font-size:.85rem">The JSON response also appears here until you leave the page. Open <strong>Saved profiles</strong> to copy credentials after refresh.</p>
 </div>
+</div>
+
+<div class="eng-panel" data-beacon-panel="profiles" role="tabpanel">
 <div class="card">
   <h2>Saved profiles</h2>
+  <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Each row includes <strong>View credentials</strong>, <strong>Scythe.embedded</strong>, <strong>Kill</strong>, and <strong>Delete</strong>.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.75rem">
+    <button type="button" class="btn btn-secondary" id="reflist">Refresh profile list</button>
+  </div>
   <table><thead><tr><th>Name</th><th>Client ID</th><th>Type</th><th>Created by</th><th>Actions</th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
+</div>
+<style>
+.eng-top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.eng-tab {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.45rem 0.85rem;
+  border-radius: 2px 2px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--muted);
+}
+.eng-tab:hover { color: var(--accent); }
+.eng-tab.eng-tab-active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--panel);
+  border-color: var(--border);
+  margin-bottom: -1px;
+  padding-bottom: calc(0.45rem + 1px);
+}
+.eng-panel { display: none; margin-bottom: 0; }
+.eng-panel.eng-panel-active { display: block; }
+</style>
 <script>
+(function initBeaconTabs() {
+  var tabs = document.querySelectorAll('[data-beacon-tab]');
+  var panels = document.querySelectorAll('[data-beacon-panel]');
+  function syncBeaconHash(name, skipWrite) {
+    if (skipWrite) return;
+    try {
+      if (name === 'profiles') {
+        if (location.hash !== '#profiles') location.hash = 'profiles';
+      } else if (location.hash) {
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    } catch (e) {}
+  }
+  function showBeaconTab(name, opts) {
+    opts = opts || {};
+    tabs.forEach(function(b) {
+      var on = b.getAttribute('data-beacon-tab') === name;
+      b.classList.toggle('eng-tab-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach(function(p) {
+      p.classList.toggle('eng-panel-active', p.getAttribute('data-beacon-panel') === name);
+    });
+    syncBeaconHash(name, opts.skipHash);
+  }
+  window.showBeaconTab = showBeaconTab;
+  tabs.forEach(function(b) {
+    b.setAttribute('role', 'tab');
+    b.onclick = function() { showBeaconTab(b.getAttribute('data-beacon-tab'), {}); };
+  });
+  panels.forEach(function(p) { p.setAttribute('role', 'tabpanel'); });
+  var h = (location.hash || '').toLowerCase();
+  if (h === '#profiles' || h === '#saved-profiles') {
+    showBeaconTab('profiles', { skipHash: true });
+  }
+})();
 function scytheHttpPayload() {
   return {
     method: document.getElementById('smethod').value.trim() || 'GET',
@@ -351,7 +432,10 @@ document.querySelectorAll('[data-embed]').forEach(function(btn) {
     await downloadScytheEmbedded(cid, null);
   };
 });
-document.getElementById('reflist').onclick = function() { location.reload(); };
+document.getElementById('reflist').onclick = function() {
+  location.hash = 'profiles';
+  location.reload();
+};
 function copyBeaconField(elId) {
   var el = document.getElementById(elId);
   if (!el) return;
@@ -388,7 +472,7 @@ document.querySelectorAll('[data-del]').forEach(function(btn) {
     if (!confirm('Delete this profile?')) return;
     var id = btn.getAttribute('data-del');
     var r = await fetch('/api/beacon-profiles/' + id, { method: 'DELETE', credentials: 'same-origin' });
-    if (r.ok) location.reload();
+    if (r.ok) { location.hash = 'profiles'; location.reload(); }
     else alert(await r.text());
   };
 });
