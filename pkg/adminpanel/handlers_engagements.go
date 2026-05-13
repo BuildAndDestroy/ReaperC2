@@ -32,7 +32,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	list, err := dbconnections.ListEngagementsForUser(ctx, role, user)
+	list, err := dbconnections.ListOpenEngagementsForUser(ctx, role, user)
 	if err != nil {
 		log.Printf("admin: list engagements: %v", err)
 		http.Error(w, "failed to load engagements", http.StatusInternalServerError)
@@ -63,16 +63,6 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	var rows strings.Builder
 	for _, e := range list {
 		id := e.ID.Hex()
-		st := strings.TrimSpace(e.Status)
-		if st == "" {
-			st = dbconnections.EngagementStatusOpen
-		}
-		stLabel := "Open"
-		stClass := "eng-st-open"
-		if strings.EqualFold(st, dbconnections.EngagementStatusClosed) {
-			stLabel = "Closed"
-			stClass = "eng-st-closed"
-		}
 		rows.WriteString("<tr><td>")
 		rows.WriteString(template.HTMLEscapeString(e.Name))
 		rows.WriteString("</td><td>")
@@ -81,11 +71,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(e.StartDate.UTC().Format("2006-01-02"))
 		rows.WriteString("</td><td class=\"mono\" style=\"font-size:.8rem\">")
 		rows.WriteString(e.EndDate.UTC().Format("2006-01-02"))
-		rows.WriteString(`</td><td><span class="`)
-		rows.WriteString(stClass)
-		rows.WriteString(`">`)
-		rows.WriteString(template.HTMLEscapeString(stLabel))
-		rows.WriteString(`</span></td><td>`)
+		rows.WriteString(`</td><td>`)
 		ht := dbconnections.NormalizeEngagementHaulType(e.HaulType)
 		rows.WriteString(template.HTMLEscapeString(dbconnections.EngagementHaulTypeLabel(ht)))
 		rows.WriteString(`</td><td>`)
@@ -97,7 +83,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`">Manage</button></td></tr>`)
 	}
 	if rows.Len() == 0 {
-		rows.WriteString(`<tr><td colspan="8" class="muted">No engagements yet — create one below.</td></tr>`)
+		rows.WriteString(`<tr><td colspan="7" class="muted">No open engagements — create one below, or search <strong>Archived</strong> by client.</td></tr>`)
 	}
 	var opChecks strings.Builder
 	for _, o := range ops {
@@ -117,10 +103,24 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `
 <h1>Engagements</h1>
-<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, and (for administrators) <strong>assigned operators</strong>. General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> once a workspace is active. Closed engagements show a banner pill.</p>
+<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, and (for administrators) <strong>assigned operators</strong>. General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> once a workspace is active. When status is <strong>Closed</strong>, the engagement leaves this list and appears under <strong>Archived engagements</strong> (search by client). A closed workspace still shows a <span class="eng-st-closed">Closed</span> pill in the top bar.</p>
 <div class="card">
   <h2>Your engagements</h2>
-  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Status</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
+  <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Open engagements only. Close an engagement under <strong>Manage</strong> to archive it.</p>
+  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
+</div>
+<div class="card">
+  <h2>Archived engagements</h2>
+  <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Closed engagements only. Search by <strong>client name</strong> (partial match) for historical access — open workspace or <strong>Manage</strong> to change status back to open.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem">
+    <div style="flex:1;min-width:12rem">
+      <label for="engArchivedQ">Client contains</label>
+      <input id="engArchivedQ" placeholder="e.g. ACME" style="margin-top:.25rem">
+    </div>
+    <button type="button" class="btn" id="engArchivedSearch">Search</button>
+  </div>
+  <p id="engArchivedMsg" class="cmd-inline-msg muted" style="min-height:1.2em"></p>
+  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody id="engArchivedBody"><tr><td colspan="7" class="muted">Enter a client search and click Search.</td></tr></tbody></table>
 </div>
 <dialog id="engManageDlg" class="eng-manage-dialog">
   <h2>Manage engagement</h2>
@@ -175,76 +175,56 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <p id="enMsg" class="cmd-inline-msg muted"></p>
 </div>
 <style>
-.eng-st-open { color: var(--ok-bright); font-weight: 600; font-size: .85rem; }
 .eng-st-closed { color: var(--muted); font-weight: 600; font-size: .85rem; }
-.eng-op-checks { margin-top: .35rem; max-width: 100%; }
-label.eng-op-check {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0.12rem 0;
-  padding: 0.15rem 0;
-  cursor: pointer;
-  max-width: 32rem;
-  position: relative;
-}
-label.eng-op-check input[type="checkbox"] {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1rem;
-  height: 1rem;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 2;
-}
-label.eng-op-check .eng-op-check-box {
-  flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--input-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-}
-label.eng-op-check:hover .eng-op-check-box {
-  border-color: var(--accent);
-  background: var(--nav-hover);
-}
-label.eng-op-check input:focus-visible + .eng-op-check-box {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-label.eng-op-check input:checked + .eng-op-check-box {
-  background: var(--accent);
-  border-color: var(--accent-dim);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
-}
-label.eng-op-check input:checked + .eng-op-check-box::after {
-  content: "";
-  width: 0.28rem;
-  height: 0.45rem;
-  border: solid var(--bg);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-  margin-bottom: 2px;
-  border-radius: 0 1px 0 0;
-}
-label.eng-op-check .eng-op-check-text {
-  font-size: 0.9rem;
-  line-height: 1.25;
-}
+label.eng-op-check { max-width: 32rem; }
 </style>
 <script>
 window.__REAPER_IS_ADMIN__ = ` + map[bool]string{true: "true", false: "false"}[isAdminUser] + `;
 window.ENG_OPS_META = ` + string(opsMetaJSON) + `;
 var engDlgId = null;
 var dlg = document.getElementById('engManageDlg');
+function haulLabel(ht) {
+  if (ht === 'short_haul') return 'Short Haul';
+  if (ht === 'long_haul') return 'Long Haul';
+  return 'Interactive';
+}
+function fmtEngDay(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return (iso + '').slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+function wireEngagementRowButtons(root) {
+  root = root || document;
+  root.querySelectorAll('[data-open]').forEach(function(btn) {
+    if (btn.dataset.wiredOpen) return;
+    btn.dataset.wiredOpen = '1';
+    btn.onclick = async function() {
+      var id = btn.getAttribute('data-open');
+      var r = await fetch('/api/engagements/active', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engagement_id: id }) });
+      if (r.ok) { location.href = '/beacons'; }
+      else { var t = await r.text(); alert(t || r.status); }
+    };
+  });
+  root.querySelectorAll('[data-manage]').forEach(function(btn) {
+    if (btn.dataset.wiredManage) return;
+    btn.dataset.wiredManage = '1';
+    btn.onclick = async function() {
+      engDlgId = btn.getAttribute('data-manage');
+      document.getElementById('engDlgMsg').textContent = '';
+      var r = await fetch('/api/engagements/' + encodeURIComponent(engDlgId), { credentials: 'same-origin' });
+      var j = await r.json().catch(function() { return {}; });
+      if (!r.ok) { alert((j && j.error) ? j.error : r.statusText); return; }
+      document.getElementById('engDlgSubtitle').textContent = (j.name || '') + ' · ' + (j.client_name || '');
+      document.getElementById('engDlgStatus').value = (j.status === 'closed') ? 'closed' : 'open';
+      var haul = j.haul_type || 'interactive';
+      if (haul !== 'short_haul' && haul !== 'long_haul') haul = 'interactive';
+      document.getElementById('engDlgHaul').value = haul;
+      buildEngDlgOps(j);
+      if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    };
+  });
+}
 function buildEngDlgOps(j) {
   var sec = document.getElementById('engDlgOpsSection');
   var box = document.getElementById('engDlgOpChecks');
@@ -282,30 +262,51 @@ function buildEngDlgOps(j) {
     box.appendChild(lab);
   });
 }
-document.querySelectorAll('[data-open]').forEach(function(btn) {
-  btn.onclick = async function() {
-    var id = btn.getAttribute('data-open');
-    var r = await fetch('/api/engagements/active', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engagement_id: id }) });
-    if (r.ok) { location.href = '/beacons'; }
-    else { var t = await r.text(); alert(t || r.status); }
-  };
-});
-document.querySelectorAll('[data-manage]').forEach(function(btn) {
-  btn.onclick = async function() {
-    engDlgId = btn.getAttribute('data-manage');
-    document.getElementById('engDlgMsg').textContent = '';
-    var r = await fetch('/api/engagements/' + encodeURIComponent(engDlgId), { credentials: 'same-origin' });
-    var j = await r.json().catch(function() { return {}; });
-    if (!r.ok) { alert((j && j.error) ? j.error : r.statusText); return; }
-    document.getElementById('engDlgSubtitle').textContent = (j.name || '') + ' · ' + (j.client_name || '');
-    document.getElementById('engDlgStatus').value = (j.status === 'closed') ? 'closed' : 'open';
-    var haul = j.haul_type || 'interactive';
-    if (haul !== 'short_haul' && haul !== 'long_haul') haul = 'interactive';
-    document.getElementById('engDlgHaul').value = haul;
-    buildEngDlgOps(j);
-    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
-  };
-});
+wireEngagementRowButtons(document);
+document.getElementById('engArchivedSearch').onclick = async function() {
+  var msg = document.getElementById('engArchivedMsg');
+  var q = (document.getElementById('engArchivedQ') || {}).value.trim();
+  var tb = document.getElementById('engArchivedBody');
+  if (!tb) return;
+  if (!q) { msg.textContent = 'Enter part of the client name to search.'; return; }
+  msg.textContent = 'Searching…';
+  var r = await fetch('/api/engagements?archived=1&q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+  var j = await r.json().catch(function() { return {}; });
+  if (!r.ok) { msg.textContent = (j && j.error) ? j.error : (r.status + ' ' + r.statusText); return; }
+  var rows = (j && j.engagements) ? j.engagements : [];
+  tb.innerHTML = '';
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="7" class="muted">No closed engagements match that client.</td></tr>';
+    msg.textContent = 'No results.';
+    return;
+  }
+  rows.forEach(function(e) {
+    var tr = document.createElement('tr');
+    var id = e.id;
+    function tdText(txt) { var c = document.createElement('td'); c.textContent = txt || ''; tr.appendChild(c); }
+    tdText(e.name);
+    tdText(e.client_name);
+    var c1 = document.createElement('td'); c1.className = 'mono'; c1.style.fontSize = '.8rem'; c1.textContent = fmtEngDay(e.start_date); tr.appendChild(c1);
+    var c2 = document.createElement('td'); c2.className = 'mono'; c2.style.fontSize = '.8rem'; c2.textContent = fmtEngDay(e.end_date); tr.appendChild(c2);
+    tdText(haulLabel(e.haul_type));
+    tdText((e.assigned_operators || []).join(', '));
+    var tact = document.createElement('td');
+    tact.style.whiteSpace = 'nowrap';
+    var b1 = document.createElement('button'); b1.type = 'button'; b1.className = 'btn btn-secondary btn-tiny'; b1.setAttribute('data-open', id); b1.textContent = 'Workspace';
+    var b2 = document.createElement('button'); b2.type = 'button'; b2.className = 'btn-tiny btn-manage-eng'; b2.setAttribute('data-manage', id); b2.textContent = 'Manage';
+    tact.appendChild(b1); tact.appendChild(document.createTextNode(' ')); tact.appendChild(b2);
+    tr.appendChild(tact);
+    tb.appendChild(tr);
+  });
+  wireEngagementRowButtons(tb);
+  msg.textContent = rows.length + ' found (closed only, max 100).';
+};
+var engArchQ = document.getElementById('engArchivedQ');
+if (engArchQ) {
+  engArchQ.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); document.getElementById('engArchivedSearch').click(); }
+  });
+}
 document.getElementById('engDlgClose').onclick = function() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); };
 document.getElementById('engDlgSave').onclick = async function() {
   var msg = document.getElementById('engDlgMsg');
@@ -489,10 +490,30 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 		jsonError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	archived := r.URL.Query().Get("archived") == "1" || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("archived")), "true")
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	list, err := dbconnections.ListEngagementsForUser(ctx, role, user)
+	var list []dbconnections.Engagement
+	var err error
+	if archived {
+		if q == "" {
+			jsonError(w, http.StatusBadRequest, "query parameter q (client name substring) is required when archived=1")
+			return
+		}
+		if _, err := dbconnections.NormalizeClientSearchQuery(q); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		list, err = dbconnections.SearchClosedEngagementsByClient(ctx, role, user, q)
+	} else {
+		list, err = dbconnections.ListOpenEngagementsForUser(ctx, role, user)
+	}
 	if err != nil {
+		if errors.Is(err, dbconnections.ErrInvalidEngagementClientQuery) {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		jsonError(w, http.StatusInternalServerError, "failed")
 		return
 	}

@@ -175,10 +175,9 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <input id="pivproxy" placeholder="e.g. 172.17.0.4:2222" class="mono">
   <label>Beacon C2 base URL (optional)</label>
   <input id="beaconBase" type="text" class="mono" placeholder="https://c2.example.com:8443 or 10.0.0.5:8080" autocomplete="off">
-  <p class="muted" style="font-size:.85rem;margin:.35rem 0 0">Where Scythe calls the beacon API (<code>-url</code> / embedded). Use <code>http</code> or <code>https</code>, FQDN or IP, optional port. Leave blank for <code>BEACON_PUBLIC_BASE_URL</code> (default <code>http://127.0.0.1:8080</code>).</p>
   <label>Expected phone-home interval (seconds)</label>
   <input id="hbsec" type="number" min="5" max="86400" value="60" title="Green while check-ins stay within this window; yellow after a missed interval (see Topology).">
-  <details class="scythe-http" style="margin-top:1rem"><summary><strong>Scythe Http</strong> (CLI options for example command &amp; embedded build)</summary>
+  <details class="scythe-http"><summary>Scythe Http (CLI options for example command &amp; embedded build)</summary>
   <p class="muted" style="margin:.5rem 0">HTTP <strong>timeout</strong> is separate from phone-home interval above. Defaults match <code>./Scythe Http -h</code> from <a href="https://github.com/BuildAndDestroy/Scythe" target="_blank" rel="noopener">Scythe</a>.</p>
   <label>HTTP method</label>
   <input id="smethod" value="GET" class="mono" placeholder="GET">
@@ -192,11 +191,12 @@ func (s *Server) handleBeaconsPage(w http.ResponseWriter, r *http.Request) {
   <textarea id="shdrs" rows="2" class="mono" placeholder="e.g. User-Agent:Mozilla/5.0… — do not repeat auth headers"></textarea>
   <label>Proxy (<code>-proxy</code>; optional; pivot proxy is applied when parent is set if this is empty)</label>
   <input id="sproxy" class="mono" placeholder="host:port">
-  <label><input type="checkbox" id="ssocks5"> SOCKS5 listener (<code>-socks5-listen</code> / <code>-socks5-port</code>)</label>
+  <div class="eng-op-checks">
+  <label class="eng-op-check"><input type="checkbox" id="ssocks5"><span class="eng-op-check-box" aria-hidden="true"></span><span class="eng-op-check-text">SOCKS5 listener (<code>-socks5-listen</code> / <code>-socks5-port</code>)</span></label>
+  <label class="eng-op-check"><input type="checkbox" id="stls"><span class="eng-op-check-box" aria-hidden="true"></span><span class="eng-op-check-text">Skip TLS verify (<code>-skip-tls-verify</code>)</span></label>
+  </div>
   <label>SOCKS5 listen port (1–65535; e.g. 9050)</label>
   <input id="ssocks5port" type="number" min="1" max="65535" value="9050" class="mono" title="Used when SOCKS5 listener is checked">
-  <p class="muted" style="font-size:.82rem;margin:.25rem 0 0">Embeds the same argv Scythe expects (e.g. <code>-socks5-listen</code> <code>-socks5-port</code> <code>9050</code>). Uncheck or leave port invalid to omit.</p>
-  <label><input type="checkbox" id="stls"> Skip TLS verify (<code>-skip-tls-verify</code>)</label>
   <label>Embedded binary: target OS (<code>GOOS</code>)</label>
   <select id="sgoos">
     <option value="linux" selected>Linux</option>

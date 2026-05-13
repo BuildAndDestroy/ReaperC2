@@ -377,6 +377,154 @@ details.cmd-fold[open] summary::before { content: "▾ "; }
 .cmd-fold-body { margin-top: .65rem; }
 .cmd-fold-actions { margin-bottom: .5rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
 .pending-table-wrap { overflow-x: auto; margin: .35rem 0; font-size: .85rem; }
+/* Custom checkboxes (engagement operators, Scythe Http flags) — theme-aligned, no native chrome */
+.eng-op-checks { margin-top: .35rem; max-width: 100%; }
+label.eng-op-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.12rem 0;
+  padding: 0.15rem 0;
+  cursor: pointer;
+  max-width: 100%;
+  position: relative;
+}
+label.eng-op-check input[type="checkbox"] {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+label.eng-op-check .eng-op-check-box {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--input-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+label.eng-op-check:hover .eng-op-check-box {
+  border-color: var(--accent);
+  background: var(--nav-hover);
+}
+label.eng-op-check input:focus-visible + .eng-op-check-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+label.eng-op-check input:checked + .eng-op-check-box {
+  background: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+label.eng-op-check input:checked + .eng-op-check-box::after {
+  content: "";
+  width: 0.28rem;
+  height: 0.45rem;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-bottom: 2px;
+  border-radius: 0 1px 0 0;
+}
+label.eng-op-check .eng-op-check-text {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  color: var(--text);
+}
+details.scythe-http { margin-top: 1rem; }
+details.scythe-http > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--text);
+  list-style: none;
+  padding: .2rem 0;
+  user-select: none;
+}
+details.scythe-http > summary::-webkit-details-marker { display: none; }
+details.scythe-http > summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+details.scythe-http[open] > summary::before { content: "▾ "; }
+.doc-page .doc-lead { margin: 0 0 1rem; max-width: 48rem; line-height: 1.45; }
+.doc-layout {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  max-width: 56rem;
+}
+@media (max-width: 720px) {
+  .doc-layout { grid-template-columns: 1fr; }
+}
+.doc-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.88rem;
+}
+.doc-nav li { margin: 0.2rem 0; }
+.doc-nav a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 2px;
+  color: var(--text);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+.doc-nav a:hover { background: var(--nav-hover); color: var(--accent); }
+.doc-nav li.doc-nav-active a {
+  background: var(--nav-active);
+  border-left-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.doc-body { min-width: 0; }
+.doc-body.doc-card { padding-top: 1rem; }
+.doc-body h1 { font-size: 1.25rem; margin: 0 0 0.75rem; color: var(--text); }
+.doc-body h2 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+.doc-body h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--text); }
+.doc-body p { margin: 0.5rem 0; line-height: 1.5; max-width: 100%; }
+.doc-body ul, .doc-body ol { margin: 0.5rem 0; padding-left: 1.35rem; line-height: 1.5; }
+.doc-body li { margin: 0.25rem 0; }
+.doc-body pre {
+  margin: 0.65rem 0;
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+}
+.doc-body code { font-size: 0.86em; }
+.doc-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin: 0.65rem 0;
+}
+.doc-body th, .doc-body td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+}
+.doc-body th { color: var(--muted); font-weight: 600; background: var(--input-bg); }
+.doc-body a { color: var(--accent); }
+.doc-body blockquote {
+  margin: 0.65rem 0;
+  padding: 0.35rem 0 0.35rem 0.85rem;
+  border-left: 3px solid var(--accent-dim);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
 </style>
 ` + engagementScript + `
 </head>
@@ -396,6 +544,7 @@ details.cmd-fold[open] summary::before { content: "▾ "; }
 ` + navItem("/chat", "Chat", active, "chat") + `
 ` + engagementNav + `
 ` + adminNav + `
+` + navItem("/documentation", "Documentation", active, "documentation") + `
 ` + navItemClass("/account", "Account", active, "account", "nav-account-end") + `
   <div class="foot">
     <div class="foot-theme"><button type="button" class="theme-toggle" id="reaper-theme-toggle" aria-label="Switch color theme">Theme</button></div>

@@ -2,9 +2,12 @@ package dbconnections
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"ReaperC2/pkg/mitreattack"
 
@@ -187,14 +190,42 @@ func ValidateAssignedOperatorUsernames(ctx context.Context, usernames []string) 
 	return nil
 }
 
-// ListEngagementsForUser returns engagements visible to this portal user (newest first).
-func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
-	var filter bson.M
+func engagementVisibilityFilter(role, username string) bson.M {
 	if role == RoleAdmin {
-		filter = bson.M{}
-	} else {
-		filter = bson.M{"assigned_operators": username}
+		return bson.M{}
 	}
+	return bson.M{"assigned_operators": username}
+}
+
+// engagementMongoStatusOpen matches documents treated as open by EngagementIsOpen (legacy rows included).
+func engagementMongoStatusOpen() bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"status": bson.M{"$exists": false}},
+		bson.M{"status": nil},
+		bson.M{"status": ""},
+		bson.M{"status": bson.M{"$regex": `^open$`, "$options": "i"}},
+	}}
+}
+
+// ListEngagementsForUser returns all engagements visible to this portal user (newest first), including closed.
+// Used where historical labels are needed (e.g. audit logs).
+func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
+	return listEngagementsWithFilter(ctx, engagementVisibilityFilter(role, username))
+}
+
+// ListOpenEngagementsForUser returns open engagements visible to this user (newest first).
+func ListOpenEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
+	vis := engagementVisibilityFilter(role, username)
+	var filter bson.M
+	if len(vis) == 0 {
+		filter = engagementMongoStatusOpen()
+	} else {
+		filter = bson.M{"$and": bson.A{vis, engagementMongoStatusOpen()}}
+	}
+	return listEngagementsWithFilter(ctx, filter)
+}
+
+func listEngagementsWithFilter(ctx context.Context, filter bson.M) ([]Engagement, error) {
 	cur, err := EngagementsCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		return nil, err
@@ -205,6 +236,87 @@ func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engag
 		var e Engagement
 		if err := cur.Decode(&e); err != nil {
 			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, cur.Err()
+}
+
+const searchClosedEngagementsMax = 100
+
+// searchClosedEngagementsScanCap bounds how many newest closed engagements we scan in memory
+// when matching client_name. The Mongo filter is constant (no user-controlled BSON); visibility
+// and substring checks run in Go (see SearchClosedEngagementsByClient).
+const searchClosedEngagementsScanCap = 4000
+
+// ErrInvalidEngagementClientQuery means the client-name search string failed validation (reject before building a query).
+var ErrInvalidEngagementClientQuery = errors.New("invalid engagement client search query")
+
+const maxEngagementClientSearchRunes = 200
+
+// NormalizeClientSearchQuery validates q for archived client search and returns a lowercase
+// needle for case-insensitive substring match. Allowed runes: letters, numbers, Unicode spaces,
+// and a small set of punctuation used in company names; rejects control characters and regex/Mongo
+// metacharacters that could widen a pattern.
+func NormalizeClientSearchQuery(q string) (needle string, err error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", ErrInvalidEngagementClientQuery
+	}
+	if utf8.RuneCountInString(q) > maxEngagementClientSearchRunes {
+		return "", fmt.Errorf("%w: too long (max %d characters)", ErrInvalidEngagementClientQuery, maxEngagementClientSearchRunes)
+	}
+	for _, r := range q {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
+			continue
+		}
+		if unicode.IsControl(r) {
+			return "", ErrInvalidEngagementClientQuery
+		}
+		switch r {
+		case '-', '_', '.', ',', '&', '\'', '(', ')', '/', '+', '#':
+			continue
+		default:
+			return "", ErrInvalidEngagementClientQuery
+		}
+	}
+	return strings.ToLower(q), nil
+}
+
+// SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
+//
+// The database query uses a fixed filter (closed status only). Validated needle and RBAC
+// (UserCanAccessEngagement) are applied in application code so the Find filter does not embed
+// user-controlled BSON (satisfies static analysis and avoids regex on user input).
+func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, nil
+	}
+	needle, err := NormalizeClientSearchQuery(q)
+	if err != nil {
+		return nil, err
+	}
+	closed := bson.M{"status": bson.M{"$regex": `^closed$`, "$options": "i"}}
+	cur, err := EngagementsCollection.Find(ctx, closed, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(searchClosedEngagementsScanCap))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []Engagement
+	for cur.Next(ctx) {
+		if len(out) >= searchClosedEngagementsMax {
+			break
+		}
+		var e Engagement
+		if err := cur.Decode(&e); err != nil {
+			return nil, err
+		}
+		if !UserCanAccessEngagement(role, username, &e) {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(e.ClientName), needle) {
+			continue
 		}
 		out = append(out, e)
 	}
