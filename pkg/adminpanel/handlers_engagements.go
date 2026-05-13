@@ -83,7 +83,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(`">Manage</button></td></tr>`)
 	}
 	if rows.Len() == 0 {
-		rows.WriteString(`<tr><td colspan="7" class="muted">No open engagements — create one below, or search <strong>Archived</strong> by client.</td></tr>`)
+		rows.WriteString(`<tr><td colspan="7" class="muted">No open engagements — use <strong>Create engagement</strong> to add one, or open <strong>Archived engagements</strong> for closed workspaces.</td></tr>`)
 	}
 	var opChecks strings.Builder
 	for _, o := range ops {
@@ -103,51 +103,40 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `
 <h1>Engagements</h1>
-<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, and (for administrators) <strong>assigned operators</strong>. General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> once a workspace is active. When status is <strong>Closed</strong>, the engagement leaves this list and appears under <strong>Archived engagements</strong> (search by client). A closed workspace still shows a <span class="eng-st-closed">Closed</span> pill in the top bar.</p>
+<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, and (for administrators) <strong>assigned operators</strong>. General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> while a workspace is active. Closed engagements appear under <strong>Archived engagements</strong>; a closed workspace still shows a <span class="eng-st-closed">Closed</span> pill in the top bar.</p>
+
+<nav class="eng-top-nav" aria-label="Engagement views" role="tablist">
+  <button type="button" class="eng-tab eng-tab-active" data-eng-tab="open">Your engagements</button>
+  <button type="button" class="eng-tab" data-eng-tab="archived">Archived engagements</button>
+  <button type="button" class="eng-tab" data-eng-tab="create">Create engagement</button>
+</nav>
+
+<div class="eng-panel eng-panel-active" data-eng-panel="open">
 <div class="card">
   <h2>Your engagements</h2>
   <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Open engagements only. Close an engagement under <strong>Manage</strong> to archive it.</p>
   <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
+</div>
+
+<div class="eng-panel" data-eng-panel="archived">
 <div class="card">
   <h2>Archived engagements</h2>
-  <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Closed engagements only. Search by <strong>client name</strong> (partial match) for historical access — open workspace or <strong>Manage</strong> to change status back to open.</p>
+  <p class="muted" style="font-size:.85rem;margin:-.25rem 0 .65rem">Closed engagements you can access (newest first, up to 100 shown). Optionally filter by client name — open a workspace or use <strong>Manage</strong> to set status back to open.</p>
   <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem">
     <div style="flex:1;min-width:12rem">
-      <label for="engArchivedQ">Client contains</label>
-      <input id="engArchivedQ" placeholder="e.g. ACME" style="margin-top:.25rem">
+      <label for="engArchivedQ">Client contains (optional)</label>
+      <input id="engArchivedQ" placeholder="e.g. ACME — leave blank for all" style="margin-top:.25rem">
     </div>
-    <button type="button" class="btn" id="engArchivedSearch">Search</button>
+    <button type="button" class="btn" id="engArchivedSearch">Apply filter</button>
+    <button type="button" class="btn btn-secondary" id="engArchivedClear">Clear filter</button>
   </div>
   <p id="engArchivedMsg" class="cmd-inline-msg muted" style="min-height:1.2em"></p>
-  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody id="engArchivedBody"><tr><td colspan="7" class="muted">Enter a client search and click Search.</td></tr></tbody></table>
+  <table><thead><tr><th>Name</th><th>Client</th><th>Start</th><th>End</th><th>Haul</th><th>Operators</th><th></th></tr></thead><tbody id="engArchivedBody"><tr><td colspan="7" class="muted">Open this tab to load archived engagements.</td></tr></tbody></table>
 </div>
-<dialog id="engManageDlg" class="eng-manage-dialog">
-  <h2>Manage engagement</h2>
-  <p id="engDlgSubtitle" class="muted" style="margin:.35rem 0 .75rem"></p>
-  <label for="engDlgStatus">Status</label>
-  <select id="engDlgStatus">
-    <option value="open">Open</option>
-    <option value="closed">Closed</option>
-  </select>
-  <label for="engDlgHaul">Haul type</label>
-  <select id="engDlgHaul">
-    <option value="interactive">Interactive</option>
-    <option value="short_haul">Short Haul</option>
-    <option value="long_haul">Long Haul</option>
-  </select>
-  <p class="muted" style="font-size:.82rem;margin:.75rem 0 0;line-height:1.4">General notes and MITRE ATT&amp;CK (tactic narrative, Navigator export, technique tags) are on <strong>Notes &amp; ATT&amp;CK</strong> in the left nav while this engagement is the active workspace.</p>
-  <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
-    <label>Assigned operators</label>
-    <p class="muted" style="font-size:.82rem;margin:.25rem 0 .35rem">Administrators only: choose which operators can open this workspace. Admins always have access.</p>
-    <div id="engDlgOpChecks" class="eng-op-checks"></div>
-  </div>
-  <p id="engDlgMsg" class="cmd-inline-msg muted"></p>
-  <div class="dlg-actions">
-    <button type="button" class="btn" id="engDlgSave">Save</button>
-    <button type="button" class="btn btn-secondary" id="engDlgClose">Close</button>
-  </div>
-</dialog>
+</div>
+
+<div class="eng-panel" data-eng-panel="create">
 <div class="card">
   <h2>Create engagement</h2>
   <label>Engagement name</label>
@@ -174,9 +163,66 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
   <button type="button" class="btn" id="enCreate">Create</button>
   <p id="enMsg" class="cmd-inline-msg muted"></p>
 </div>
+</div>
+
+<dialog id="engManageDlg" class="eng-manage-dialog">
+  <h2>Manage engagement</h2>
+  <p id="engDlgSubtitle" class="muted" style="margin:.35rem 0 .75rem"></p>
+  <label for="engDlgStatus">Status</label>
+  <select id="engDlgStatus">
+    <option value="open">Open</option>
+    <option value="closed">Closed</option>
+  </select>
+  <label for="engDlgHaul">Haul type</label>
+  <select id="engDlgHaul">
+    <option value="interactive">Interactive</option>
+    <option value="short_haul">Short Haul</option>
+    <option value="long_haul">Long Haul</option>
+  </select>
+  <p class="muted" style="font-size:.82rem;margin:.75rem 0 0;line-height:1.4">General notes and MITRE ATT&amp;CK (tactic narrative, Navigator export, technique tags) are on <strong>Notes &amp; ATT&amp;CK</strong> in the left nav while this engagement is the active workspace.</p>
+  <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
+    <label>Assigned operators</label>
+    <p class="muted" style="font-size:.82rem;margin:.25rem 0 .35rem">Administrators only: choose which operators can open this workspace. Admins always have access.</p>
+    <div id="engDlgOpChecks" class="eng-op-checks"></div>
+  </div>
+  <p id="engDlgMsg" class="cmd-inline-msg muted"></p>
+  <div class="dlg-actions">
+    <button type="button" class="btn" id="engDlgSave">Save</button>
+    <button type="button" class="btn btn-secondary" id="engDlgClose">Close</button>
+  </div>
+</dialog>
 <style>
 .eng-st-closed { color: var(--muted); font-weight: 600; font-size: .85rem; }
 label.eng-op-check { max-width: 32rem; }
+.eng-top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.eng-tab {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.45rem 0.85rem;
+  border-radius: 2px 2px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--muted);
+}
+.eng-tab:hover { color: var(--accent); }
+.eng-tab.eng-tab-active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--panel);
+  border-color: var(--border);
+  margin-bottom: -1px;
+  padding-bottom: calc(0.45rem + 1px);
+}
+.eng-panel { display: none; margin-bottom: 0; }
+.eng-panel.eng-panel-active { display: block; }
 </style>
 <script>
 window.__REAPER_IS_ADMIN__ = ` + map[bool]string{true: "true", false: "false"}[isAdminUser] + `;
@@ -263,21 +309,11 @@ function buildEngDlgOps(j) {
   });
 }
 wireEngagementRowButtons(document);
-document.getElementById('engArchivedSearch').onclick = async function() {
-  var msg = document.getElementById('engArchivedMsg');
-  var q = (document.getElementById('engArchivedQ') || {}).value.trim();
-  var tb = document.getElementById('engArchivedBody');
-  if (!tb) return;
-  if (!q) { msg.textContent = 'Enter part of the client name to search.'; return; }
-  msg.textContent = 'Searching…';
-  var r = await fetch('/api/engagements?archived=1&q=' + encodeURIComponent(q), { credentials: 'same-origin' });
-  var j = await r.json().catch(function() { return {}; });
-  if (!r.ok) { msg.textContent = (j && j.error) ? j.error : (r.status + ' ' + r.statusText); return; }
-  var rows = (j && j.engagements) ? j.engagements : [];
+function renderArchivedRows(rows, msgEl, tb, qUsed) {
   tb.innerHTML = '';
   if (!rows.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="muted">No closed engagements match that client.</td></tr>';
-    msg.textContent = 'No results.';
+    tb.innerHTML = '<tr><td colspan="7" class="muted">' + (qUsed ? 'No archived engagements match that client filter.' : 'No archived engagements visible to you.') + '</td></tr>';
+    msgEl.textContent = qUsed ? 'No results.' : '';
     return;
   }
   rows.forEach(function(e) {
@@ -299,8 +335,56 @@ document.getElementById('engArchivedSearch').onclick = async function() {
     tb.appendChild(tr);
   });
   wireEngagementRowButtons(tb);
-  msg.textContent = rows.length + ' found (closed only, max 100).';
+  var suffix = ' (max 100 newest closed).';
+  if (qUsed) {
+    msgEl.textContent = rows.length + ' match(es) with client filter' + suffix;
+  } else {
+    msgEl.textContent = rows.length + ' archived engagement(s)' + suffix;
+  }
+}
+async function loadArchivedTable() {
+  var msg = document.getElementById('engArchivedMsg');
+  var qEl = document.getElementById('engArchivedQ');
+  var tb = document.getElementById('engArchivedBody');
+  if (!tb || !msg) return;
+  var q = qEl ? qEl.value.trim() : '';
+  msg.textContent = 'Loading…';
+  var url = '/api/engagements?archived=1';
+  if (q) url += '&q=' + encodeURIComponent(q);
+  var r = await fetch(url, { credentials: 'same-origin' });
+  var j = await r.json().catch(function() { return {}; });
+  if (!r.ok) { msg.textContent = (j && j.error) ? j.error : (r.status + ' ' + r.statusText); return; }
+  var rows = (j && j.engagements) ? j.engagements : [];
+  renderArchivedRows(rows, msg, tb, !!q);
+}
+document.getElementById('engArchivedSearch').onclick = function() { loadArchivedTable(); };
+document.getElementById('engArchivedClear').onclick = function() {
+  var qEl = document.getElementById('engArchivedQ');
+  if (qEl) qEl.value = '';
+  loadArchivedTable();
 };
+(function initEngTabs() {
+  var tabs = document.querySelectorAll('[data-eng-tab]');
+  var panels = document.querySelectorAll('[data-eng-panel]');
+  function show(tabName) {
+    tabs.forEach(function(b) {
+      var on = b.getAttribute('data-eng-tab') === tabName;
+      b.classList.toggle('eng-tab-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach(function(p) {
+      var on = p.getAttribute('data-eng-panel') === tabName;
+      p.classList.toggle('eng-panel-active', on);
+    });
+    if (tabName === 'archived') loadArchivedTable();
+  }
+  tabs.forEach(function(b) {
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', b.classList.contains('eng-tab-active') ? 'true' : 'false');
+    b.onclick = function() { show(b.getAttribute('data-eng-tab')); };
+  });
+  panels.forEach(function(p) { p.setAttribute('role', 'tabpanel'); });
+})();
 var engArchQ = document.getElementById('engArchivedQ');
 if (engArchQ) {
   engArchQ.addEventListener('keydown', function(ev) {
@@ -498,14 +582,10 @@ func (s *Server) handleAPIEngagementsGET(w http.ResponseWriter, r *http.Request)
 	var err error
 	if archived {
 		if q == "" {
-			jsonError(w, http.StatusBadRequest, "query parameter q (client name substring) is required when archived=1")
-			return
+			list, err = dbconnections.ListClosedEngagementsForUser(ctx, role, user)
+		} else {
+			list, err = dbconnections.SearchClosedEngagementsByClient(ctx, role, user, q)
 		}
-		if _, err := dbconnections.NormalizeClientSearchQuery(q); err != nil {
-			jsonError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		list, err = dbconnections.SearchClosedEngagementsByClient(ctx, role, user, q)
 	} else {
 		list, err = dbconnections.ListOpenEngagementsForUser(ctx, role, user)
 	}
