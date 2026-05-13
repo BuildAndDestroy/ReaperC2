@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/pquerna/otp v1.5.0
+	github.com/yuin/goldmark v1.7.8
 	go.mongodb.org/mongo-driver v1.17.3
 	golang.org/x/crypto v0.28.0
 )

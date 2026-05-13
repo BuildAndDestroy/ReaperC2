@@ -3,6 +3,7 @@ package dbconnections
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -187,15 +188,76 @@ func ValidateAssignedOperatorUsernames(ctx context.Context, usernames []string) 
 	return nil
 }
 
-// ListEngagementsForUser returns engagements visible to this portal user (newest first).
-func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
-	var filter bson.M
+func engagementVisibilityFilter(role, username string) bson.M {
 	if role == RoleAdmin {
-		filter = bson.M{}
-	} else {
-		filter = bson.M{"assigned_operators": username}
+		return bson.M{}
 	}
+	return bson.M{"assigned_operators": username}
+}
+
+// engagementMongoStatusOpen matches documents treated as open by EngagementIsOpen (legacy rows included).
+func engagementMongoStatusOpen() bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"status": bson.M{"$exists": false}},
+		bson.M{"status": nil},
+		bson.M{"status": ""},
+		bson.M{"status": bson.M{"$regex": `^open$`, "$options": "i"}},
+	}}
+}
+
+// ListEngagementsForUser returns all engagements visible to this portal user (newest first), including closed.
+// Used where historical labels are needed (e.g. audit logs).
+func ListEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
+	return listEngagementsWithFilter(ctx, engagementVisibilityFilter(role, username))
+}
+
+// ListOpenEngagementsForUser returns open engagements visible to this user (newest first).
+func ListOpenEngagementsForUser(ctx context.Context, role, username string) ([]Engagement, error) {
+	vis := engagementVisibilityFilter(role, username)
+	var filter bson.M
+	if len(vis) == 0 {
+		filter = engagementMongoStatusOpen()
+	} else {
+		filter = bson.M{"$and": bson.A{vis, engagementMongoStatusOpen()}}
+	}
+	return listEngagementsWithFilter(ctx, filter)
+}
+
+func listEngagementsWithFilter(ctx context.Context, filter bson.M) ([]Engagement, error) {
 	cur, err := EngagementsCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []Engagement
+	for cur.Next(ctx) {
+		var e Engagement
+		if err := cur.Decode(&e); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, cur.Err()
+}
+
+const searchClosedEngagementsMax = 100
+
+// SearchClosedEngagementsByClient returns closed engagements visible to the user whose client_name contains q (case-insensitive).
+func SearchClosedEngagementsByClient(ctx context.Context, role, username, q string) ([]Engagement, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, nil
+	}
+	vis := engagementVisibilityFilter(role, username)
+	closed := bson.M{"status": bson.M{"$regex": `^closed$`, "$options": "i"}}
+	client := bson.M{"client_name": bson.M{"$regex": regexp.QuoteMeta(q), "$options": "i"}}
+	var filter bson.M
+	if len(vis) == 0 {
+		filter = bson.M{"$and": bson.A{closed, client}}
+	} else {
+		filter = bson.M{"$and": bson.A{vis, closed, client}}
+	}
+	cur, err := EngagementsCollection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(searchClosedEngagementsMax))
 	if err != nil {
 		return nil, err
 	}

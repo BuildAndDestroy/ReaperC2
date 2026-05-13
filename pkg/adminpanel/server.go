@@ -26,6 +26,9 @@ func NewServer() *Server {
 	s.router.HandleFunc("/login/mfa", s.handleLoginMFAPost).Methods(http.MethodPost)
 	s.router.HandleFunc("/logout", s.handleLogout).Methods(http.MethodPost)
 
+	s.router.HandleFunc("/documentation", s.handleDocumentationGET).Methods(http.MethodGet)
+	s.router.HandleFunc("/documentation/{page:[a-z0-9-]+}", s.handleDocumentationGET).Methods(http.MethodGet)
+
 	s.router.HandleFunc("/account", s.handleAccountPage).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/account", s.handleAPIAccountGET).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/account/password", s.handleAPIAccountPasswordPOST).Methods(http.MethodPost)
