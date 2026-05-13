@@ -549,6 +549,54 @@ func (s *Server) handleTopologyPage(w http.ResponseWriter, r *http.Request) {
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
 var __topoNetwork = null;
+var __topoChromeReady = false;
+var __topoReload = function() {};
+function exportTopologyPNG() {
+	if (!__topoNetwork) {
+		return;
+	}
+	var wrap = document.getElementById('topo-graph');
+	if (!wrap) {
+		return;
+	}
+	var canvases = wrap.getElementsByTagName('canvas');
+	if (!canvases.length) {
+		return;
+	}
+	var c0 = canvases[0];
+	var w = c0.width;
+	var h = c0.height;
+	var merged = document.createElement('canvas');
+	merged.width = w;
+	merged.height = h;
+	var ctx = merged.getContext('2d');
+	for (var i = 0; i < canvases.length; i++) {
+		ctx.drawImage(canvases[i], 0, 0);
+	}
+	var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+	var a = document.createElement('a');
+	a.href = merged.toDataURL('image/png');
+	a.download = 'topology-' + ts + '.png';
+	a.setAttribute('rel', 'noopener');
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+}
+function ensureTopoChrome() {
+	if (__topoChromeReady) {
+		return;
+	}
+	var card = document.getElementById('topo-card');
+	card.innerHTML = '<div class="profile-actions" style="margin-bottom:0.75rem">' +
+		'<button type="button" class="btn btn-secondary" id="topo-refresh" style="margin-top:0">Refresh</button>' +
+		'<button type="button" class="btn btn-secondary" id="topo-export-png" style="margin-top:0">Export PNG</button>' +
+		'</div>' +
+		'<div id="topo-graph" class="topo-graph-canvas" role="img" aria-label="Beacon topology graph"></div>' +
+		'<p class="muted topo-graph-hint">Drag to rearrange, scroll or pinch to zoom, hover nodes for details. Arrows point along the path toward C2. Click <strong>Refresh</strong> to reload layout and beacon status from the server.</p>';
+	document.getElementById('topo-refresh').addEventListener('click', function() { __topoReload(); });
+	document.getElementById('topo-export-png').addEventListener('click', exportTopologyPNG);
+	__topoChromeReady = true;
+}
 function reaperCssVar(name, fallback) {
   var raw = getComputedStyle(document.documentElement).getPropertyValue(name);
   var v = raw ? raw.trim() : '';
@@ -582,13 +630,12 @@ function buildVisTooltip(n) {
   return lines.join('\n');
 }
 function renderTopology(g) {
-  var card = document.getElementById('topo-card');
-  if (__topoNetwork) {
-    try { __topoNetwork.destroy(); } catch (e) {}
-    __topoNetwork = null;
-  }
-  card.innerHTML = '<div id="topo-graph" class="topo-graph-canvas" role="img" aria-label="Beacon topology graph"></div><p class="muted topo-graph-hint">Drag to rearrange, scroll or pinch to zoom, hover nodes for details. Arrows point along the path toward C2. Refreshes every 5s.</p>';
-  var visNodes = [];
+	ensureTopoChrome();
+	if (__topoNetwork) {
+		try { __topoNetwork.destroy(); } catch (e) {}
+		__topoNetwork = null;
+	}
+	var visNodes = [];
   for (var i = 0; i < g.nodes.length; i++) {
     var n = g.nodes[i];
     visNodes.push({
@@ -632,18 +679,56 @@ function renderTopology(g) {
   __topoNetwork = new vis.Network(container, data, options);
 }
 (async function() {
-  async function load() {
-    if (typeof vis === 'undefined' || !vis.Network) {
-      document.getElementById('topo-card').innerHTML = '<p class="muted">Could not load graph library (vis-network). Check network or allow unpkg.com.</p>';
-      return;
-    }
-    var r = await fetch('/api/topology', { credentials: 'same-origin' });
-    var g = await r.json();
-    if (!r.ok) { document.getElementById('topo-card').innerHTML = '<p class="muted">' + (g.error||r.statusText) + '</p>'; return; }
-    renderTopology(g);
-  }
-  await load();
-  setInterval(load, 5000);
+	async function load() {
+		if (typeof vis === 'undefined' || !vis.Network) {
+			document.getElementById('topo-card').innerHTML = '<p class="muted">Could not load graph library (vis-network). Check network or allow unpkg.com.</p>';
+			return;
+		}
+		var refreshBtn = document.getElementById('topo-refresh');
+		var exportBtn = document.getElementById('topo-export-png');
+		if (refreshBtn) {
+			refreshBtn.disabled = true;
+		}
+		if (exportBtn) {
+			exportBtn.disabled = true;
+		}
+		try {
+			var r = await fetch('/api/topology', { credentials: 'same-origin' });
+			var g = await r.json();
+			if (!r.ok) {
+				document.getElementById('topo-card').innerHTML = '<p class="muted">' + (g.error || r.statusText) + '</p>';
+				__topoChromeReady = false;
+				try {
+					if (__topoNetwork) {
+						__topoNetwork.destroy();
+					}
+				} catch (e) {}
+				__topoNetwork = null;
+				return;
+			}
+			renderTopology(g);
+		} catch (e) {
+			document.getElementById('topo-card').innerHTML = '<p class="muted">Failed to load topology.</p>';
+			__topoChromeReady = false;
+			try {
+				if (__topoNetwork) {
+					__topoNetwork.destroy();
+				}
+			} catch (e2) {}
+			__topoNetwork = null;
+		} finally {
+			refreshBtn = document.getElementById('topo-refresh');
+			exportBtn = document.getElementById('topo-export-png');
+			if (refreshBtn) {
+				refreshBtn.disabled = false;
+			}
+			if (exportBtn) {
+				exportBtn.disabled = false;
+			}
+		}
+	}
+	__topoReload = load;
+	await load();
 })();
 </script>`
 	s.writeAppPage(w, user, role, "topology", "Topology", body, eng)
