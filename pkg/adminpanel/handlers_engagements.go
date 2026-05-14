@@ -950,7 +950,7 @@ func (s *Server) handleAPIEngagementAttackNavigatorLayer(w http.ResponseWriter, 
 		return
 	}
 	layer := mitreattack.NavigatorLayer(e.Name, navigatorLayerDescription(e), ver)
-	mitreattack.ApplyTechniquesToNavigatorLayer(layer, e.AttackTechniques)
+	mitreattack.ApplyTechniquesToNavigatorLayer(layer, ver, e.AttackTechniques)
 	raw, err := mitreattack.MarshalNavigatorLayer(layer)
 	if err != nil {
 		log.Printf("admin: marshal navigator layer: %v", err)
