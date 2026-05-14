@@ -165,9 +165,10 @@ func NavigatorLayer(name, description string, attackVersion int) map[string]inte
 		"legendItems":                   []interface{}{},
 		"metadata":                      []interface{}{},
 		"links":                         []interface{}{},
-		"showTacticRowBackground":       false,
-		"selectTechniquesAcrossTactics": true,
-		"selectSubtechniquesWithParent": true,
+		"showTacticRowBackground": false,
+		// false: avoid Navigator selecting all tactic instances + all subtechniques on one click (defaults are true).
+		"selectTechniquesAcrossTactics": false,
+		"selectSubtechniquesWithParent": false,
 	}
 }
 

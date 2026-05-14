@@ -141,8 +141,16 @@ func NavigatorLegendDemonstrated() map[string]interface{} {
 }
 
 // ApplyTechniquesToNavigatorLayer sets layer "techniques" and a matching legend when tags is non-empty.
-func ApplyTechniquesToNavigatorLayer(layer map[string]interface{}, tags []TechniqueTag) {
-	objs := NavigatorTechniqueLayerObjects(tags)
+// attackVersion selects the embedded matrix catalog used to place each technique ID on every tactic column where it appears.
+func ApplyTechniquesToNavigatorLayer(layer map[string]interface{}, attackVersion int, tags []TechniqueTag) {
+	if len(tags) == 0 {
+		return
+	}
+	expanded := tags
+	if ex, err := ExpandTechniqueTagsForNavigatorExport(attackVersion, tags); err == nil && len(ex) > 0 {
+		expanded = ex
+	}
+	objs := NavigatorTechniqueLayerObjects(expanded)
 	if len(objs) == 0 {
 		return
 	}
