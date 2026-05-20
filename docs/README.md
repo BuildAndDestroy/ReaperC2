@@ -7,7 +7,8 @@ ReaperC2 is a C2 framework with a **beacon HTTP API** and an **operator admin pa
 | Topic | Description |
 |-------|-------------|
 | [Installation](/documentation/installation) | Prerequisites, building from source, MongoDB seeding |
-| [Usage](/documentation/usage) | Environment variables, listeners, operator UI overview |
+| [Usage](/documentation/usage) | Environment variables, listeners, operator UI summary |
+| [Operator guide](/documentation/operator-guide) | What each admin page does (Engagements, Beacons, Commands, …) |
 | [Docker Compose](/documentation/docker-compose) | Local full stack with MongoDB |
 | [Kubernetes](/documentation/kubernetes) | Cluster deployment, manifests, admin access patterns |
 

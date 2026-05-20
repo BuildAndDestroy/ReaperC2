@@ -15,27 +15,33 @@ Set `ADMIN_DISABLE=1` to run **beacon only** (no web UI on that instance).
 
 Open the admin URL (for example `http://127.0.0.1:8443/login`). Use an account from the `operators` collection or the bootstrap credentials on first run.
 
-After login, pick an **Engagement** workspace (required for most operator pages). **Documentation** is available without switching context.
+After login, open **Engagements** and choose **Workspace** on an engagement. Most operator pages require an **active workspace** (banner in the sidebar). **Documentation** and **Account** work without one.
 
-## Operator UI (summary)
+## Operator UI
+
+For a full walkthrough of every admin page (especially **Beacons**), see **[Operator guide](/documentation/operator-guide)**.
 
 | Area | Purpose |
 |------|---------|
-| **Engagements** | Create and manage engagements; admins assign operators |
-| **Beacons** | Generate client profiles, Scythe examples, **Scythe.embedded** download |
-| **Commands** | Queue shell / Scythe tasks; view artifacts |
-| **Reports** | JSON / CSV exports |
-| **Topology** | Beacon graph |
-| **Notes & ATT&CK** | Engagement notes and MITRE layer |
-| **Chat** | Operator chat room |
-| **Users** / **Logs** | Admin-only user and audit views |
+| **Engagements** | Create workspaces; assign operators; open/close engagements |
+| **Beacons** | Generate clients, Scythe examples, **Scythe.embedded** download, profiles, kill |
+| **Commands** | Queue shell / Scythe tasks; stage uploads; view artifacts and output |
+| **Reports** | JSON / CSV / Ghostwriter / ATT&CK Navigator layer exports |
+| **Topology** | Interactive beacon graph (liveness and pivot chain) |
+| **Notes & ATT&CK** | Engagement notes and MITRE Navigator layer source data |
+| **Chat** | Operator chat per engagement |
+| **Engagement logs** | Audit trail for the active engagement |
+| **All logs** | Admin-only global audit + exports |
+| **Users** | Admin-only portal accounts |
+| **Account** | Password and optional TOTP 2FA |
 
-Roles: **Admin** (full access) vs **Operator** (no user APIs). See repository README for API details.
+Roles: **Admin** (full access) vs **Operator** (no user APIs). Legacy accounts without `role` are treated as Admin.
 
 ## Beacon / Scythe
 
-- Set **Beacon C2 base URL** in the UI (or `BEACON_PUBLIC_BASE_URL`) to the **public** origin beacons use (not `localhost:8443`).
-- **Scythe.embedded** requires **Go** on the server host (or container) at runtime; sources resolve via `REAPERC2_ROOT/third_party/Scythe` or submodule path next to the binary.
+- Set **Beacon C2 base URL** in the UI (or `BEACON_PUBLIC_BASE_URL`) to the **public** origin beacons use (port **8080** / ingress to beacon API — not `localhost:8443` admin).
+- **Scythe.embedded** requires **Go** on the server host at runtime; sources resolve via `REAPERC2_ROOT/third_party/Scythe` or submodule path next to the binary.
+- Embedded binaries need **`TERM_HARVEST=9`** in the environment before launch (see **Beacons** page in the UI or Operator guide).
 
 ## Security-related environment variables
 
@@ -47,6 +53,7 @@ Roles: **Admin** (full access) vs **Operator** (no user APIs). See repository RE
 
 ## Further reading
 
+- [Operator guide](/documentation/operator-guide) — per-page UI reference
 - [Installation](/documentation/installation)
 - [Docker Compose](/documentation/docker-compose)
 - [Kubernetes](/documentation/kubernetes)

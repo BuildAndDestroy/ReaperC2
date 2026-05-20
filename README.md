@@ -131,17 +131,20 @@ The process serves **two HTTP listeners**: the **beacon API** (implants / Scythe
 
 Operator passwords are stored as **Argon2id** (serialized in `operators.password_hash`). **Existing bcrypt hashes** (`$2a$` / `$2b$`) still verify so you can migrate gradually.
 
-Open `https://<host>:8443/beacons` (or `http://` locally; `/` redirects to **Beacons**). The UI includes:
+Open `https://<host>:8443` (or `http://` locally; `/` redirects to **Engagements**). Pick a workspace, then use **Beacons**, **Commands**, and the other operator pages. Full per-page documentation is in [`docs/operator-guide.md`](docs/operator-guide.md) and in the admin UI under **Documentation → Operator guide**.
 
 | Area | Purpose |
 |------|---------|
-| **Beacons** | Generate clients (optional **Beacon C2 base URL**: `http`/`https`, FQDN or IP, optional port — saved on the profile for embedded rebuilds). Optional label, `ParentClientId` for pivot chain, optional pivot proxy for Scythe. **Scythe Http** options in the UI match `Http` subcommand flags (`-method`, `-timeout`, `-body`, `-directories`, `-headers`, `-proxy`, `-skip-tls-verify`); **HTTP client timeout** is separate from **phone-home interval** (seconds). **Download Scythe.embedded** runs `go build` on the vendored Scythe submodule (`third_party/Scythe`; clone with `git submodule update --init`) and streams the binary — the admin host needs **Go** installed. API: `POST /api/beacons/scythe-embedded`. Each generation **always saves a profile** in `beacon_profiles`. List/delete saved profiles. |
-| **Commands** | Queue beacon tasks: strings (e.g. `whoami`, `download <host path>`) or JSON objects for Scythe file ops (`command_obj`, or stage a file with `POST /api/beacon-staging` then queue with `upload.staging_id` + `remote_path`). Heartbeat returns a JSON `Commands` array (strings and/or objects). Pulled files are stored under `REAPER_ARTIFACT_DIR` and listed/downloaded from this page (`GET /api/beacon-artifacts`, `GET /api/beacon-artifacts/{id}/file`). |
-| **Reports** | Download JSON or CSV exports (redacted or full). JSON includes `command_output` (recent beacon command results from the `data` collection). **Ghostwriter CSV** (`/api/reports/export-ghostwriter`) uses the same 13-column schema as Logs for clients, saved profiles, and command output—no operator chat (chat is under Logs). |
-| **Topology** | Graph of C2 → beacons (and parent → child when `ParentClientId` is set on a client). |
-| **Chat** | Operator messages stored in `operator_chat`. |
-| **Users** (admins only) | Create additional portal accounts and assign **Admin** or **Operator** (`/users`, `POST /api/users`). |
-| **Logs** (admins only) | View recent **audit** events (`audit_logs`): operator actions plus **beacon** deliveries (`beacon_commands_delivered`) and **output** (`beacon_output_received`). Download JSON (`/api/logs/export`, includes `operator_chat`) or **Ghostwriter CSV** (`/api/logs/export-ghostwriter`: audit + beacon results + operator chat) for Specter Ops Ghostwriter. |
+| **Engagements** | Workspaces that scope beacons, commands, reports, topology, notes, and chat; assign operators (admins). |
+| **Beacons** | Generate clients, Scythe Http options, **Scythe.embedded** download (`POST /api/beacons/scythe-embedded`; Go required on server), saved profiles, kill queue. |
+| **Commands** | Queue tasks; stage uploads; view pending queue, artifacts, and output history. |
+| **Reports** | JSON / CSV / Ghostwriter / ATT&CK Navigator layer exports. |
+| **Topology** | Interactive beacon graph (liveness + pivot chain). |
+| **Notes & ATT&CK** | Engagement notes and MITRE Navigator layer source. |
+| **Chat** | Operator chat per engagement (`operator_chat`). |
+| **Engagement logs** | Audit trail for the active engagement. |
+| **Users** (admins only) | Portal accounts (`/users`, `POST /api/users`). |
+| **All logs** (admins only) | Global audit + JSON / Ghostwriter export (includes operator chat). |
 
 **Roles** (field `operators.role` in MongoDB): **Admin** — full portal access including user management. **Operator** — beacons, reports, topology, chat, and profile management; **cannot** create users or call user APIs. Accounts without `role` are treated as **Admin** for backward compatibility. The bootstrap account is always **Admin**.
 
