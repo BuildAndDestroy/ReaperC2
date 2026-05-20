@@ -39,6 +39,20 @@ Compose wires typical values; see `docker-compose.yml` for the full list. Highli
 | `BEACON_PUBLIC_BASE_URL` | Shown in Scythe examples (point at reachable beacon URL) |
 | `REAPERC2_ROOT` | Set to `/root` so runtime `go build` for embedded Scythe finds sources |
 
+## Host Ollama (optional profile)
+
+If Ollama runs on the **host** (e.g. systemd on `127.0.0.1:11434`) and ReaperC2 runs in Compose, enable the **`ollama-host`** profile so a small **socat** container forwards **docker0 only** (`172.17.0.1:11434` → `127.0.0.1:11434`) without binding Ollama on `0.0.0.0` (LAN).
+
+In `.env`:
+
+```env
+COMPOSE_PROFILES=ollama-host
+REAPER_AI_OLLAMA_ENABLED=1
+REAPER_AI_OLLAMA_API_URL=http://host.docker.internal:11434/v1
+```
+
+Then `docker compose up --build` (or add `--profile ollama-host`). See [Operator AI](/documentation/operator-guide-ai).
+
 ## Volumes
 
 `mongo_data` persists database files across container restarts.

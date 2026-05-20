@@ -30,6 +30,7 @@ const (
 	AuditActionUserDisabled              = "user_disabled"
 	AuditActionUserEnabled               = "user_enabled"
 	AuditActionEngagementOperatorsUpdated = "engagement_operators_updated"
+	AuditActionAIChat                     = "ai_chat"
 )
 
 // AuditLogsCollection stores operator/C2 portal audit events.

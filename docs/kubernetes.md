@@ -50,6 +50,43 @@ The sample includes a MongoDB Deployment and PVC. For managed Mongo (DocumentDB,
 
 From a pod or job that can reach MongoDB, run the repo’s [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) with `MONGO_HOST` set to the cluster DNS name of the Mongo Service (see root README “Kubernetes” example).
 
+## Operator AI (multi-model)
+
+The same env vars as Docker Compose / `.env.example` apply in Kubernetes. Sample manifests:
+
+- [`deployments/k8s/operator-ai.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/operator-ai.yaml) — **ConfigMap** (model catalog, defaults) and **Secret** (API keys).
+- ReaperC2 Deployments under `deployments/k8s/**/full-deployment.yaml` load them with `envFrom` (`optional: true` so the app starts before you enable AI).
+
+**Enable Operator AI:**
+
+1. Edit `operator-ai.yaml`: set `REAPER_AI_OPENAI_MODELS` / `REAPER_AI_ANTHROPIC_MODELS` (comma-separated) and API keys in the Secret.
+2. Apply:
+
+   ```bash
+   kubectl apply -f deployments/k8s/operator-ai.yaml
+   kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+   ```
+
+3. Port-forward admin (`8443`) and open **Operator AI** — choose **Auto** or a specific model from the dropdown.
+
+| Source | Variables |
+|--------|-----------|
+| ConfigMap `reaperc2-ai-config` | `REAPER_AI_ENABLED`, `REAPER_AI_DEFAULT_MODEL`, `REAPER_AI_*_MODELS`, `REAPER_AI_MODELS`, `REAPER_AI_MAX_TOKENS` |
+| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY` |
+
+**Ollama in K8s** is optional. Most deployments use cloud APIs only. If you run Ollama as its own Deployment/Service, set `REAPER_AI_OLLAMA_ENABLED=1` and `REAPER_AI_OLLAMA_API_URL` to the in-cluster URL (for example `http://ollama.ollama-ns.svc.cluster.local:11434/v1`) in the ConfigMap — not `host.docker.internal`.
+
+To patch keys without storing them in git:
+
+```bash
+kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
+  --from-literal=REAPER_AI_OPENAI_API_KEY=sk-... \
+  --from-literal=REAPER_AI_ANTHROPIC_API_KEY=sk-ant-... \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+See [Operator AI](/documentation/operator-guide-ai) for variable details.
+
 ## See also
 
 - [Installation](/documentation/installation)

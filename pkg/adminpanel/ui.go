@@ -41,7 +41,7 @@ func navItemClass(href, label, active, slug, extraClass string) string {
 // layoutHTML returns a full page with left nav and main content (body is trusted HTML from our templates only).
 // role is "admin" or "operator" (drives optional admin-only nav: Users, Logs).
 // engagementBannerHTML / engagementScript are optional (active engagement context).
-func layoutHTML(username, role, active, title, bodyHTML, engagementBannerHTML, engagementScript string) string {
+func layoutHTML(username, role, active, title, bodyHTML, engagementBannerHTML, engagementScript, aiDrawerHTML string) string {
 	engagementNav := navItem("/engagement/logs", "Engagement logs", active, "englogs")
 	adminNav := ""
 	if role == "admin" {
@@ -56,6 +56,7 @@ func layoutHTML(username, role, active, title, bodyHTML, engagementBannerHTML, e
 ` + themeFontLinks() + `
 ` + themeBootScript() + `
 ` + navSidebarBootScript() + `
+` + aiDrawerBootScript() + `
 <title>` + template.HTMLEscapeString(title+" — ReaperC2") + `</title>
 <style>
 /* Harvest Range Labs palette — harvestrangelabs.com (dark default + html[data-theme="light"]) */
@@ -656,6 +657,7 @@ details.scythe-http[open] > summary::before { content: "▾ "; }
 })();
 </script>
 </main>
+` + aiDrawerHTML + `
 </body>
 </html>`
 }

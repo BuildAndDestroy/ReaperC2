@@ -49,3 +49,4 @@ Use the **section tabs** above to open Engagements, Beacons, Commands, and the r
 | [All logs](/documentation/operator-guide-all-logs) | `/logs` (admins) |
 | [Users](/documentation/operator-guide-users) | `/users` (admins) |
 | [Account](/documentation/operator-guide-account) | `/account` |
+| [Operator AI](/documentation/operator-guide-ai) | Right-side panel (or `/ai` to open) |
