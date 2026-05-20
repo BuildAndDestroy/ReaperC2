@@ -36,7 +36,7 @@ const beaconEmbeddedHostRunHTML = `<details class="beacon-run-host"><summary><st
 func (s *Server) writeAppPage(w http.ResponseWriter, user, role, active, title, bodyHTML string, eng *dbconnections.Engagement) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(layoutHTML(user, role, active, title, bodyHTML, engagementBannerFragment(eng), engagementScriptFragment(eng))))
+	_, _ = w.Write([]byte(layoutHTML(user, role, active, title, bodyHTML, engagementBannerFragment(eng), engagementScriptFragment(eng), operatorAIDrawerForEngagement(eng))))
 }
 
 func (s *Server) requireHTMLAuth(w http.ResponseWriter, r *http.Request) (string, string, bool) {

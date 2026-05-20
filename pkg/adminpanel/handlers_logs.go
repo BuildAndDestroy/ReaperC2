@@ -39,7 +39,7 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 
 	body := `
 <h1>All audit logs</h1>
-<p class="muted">Every engagement and global events (e.g. user creation, full exports). Beacon rows include <strong>Engagement</strong> when known. For one engagement only, use <a href="/engagement/logs">Engagement logs</a>. Details may truncate; JSON export has full text (includes <code>operator_chat</code>).</p>
+<p class="muted">Every engagement and global events (e.g. user creation, full exports). Beacon rows include <strong>Engagement</strong> when known. For one engagement only, use <a href="/engagement/logs">Engagement logs</a>. <strong>Operator AI</strong> (<code>ai_chat</code>) rows show the user prompt and assistant reply. Details may truncate in the table; JSON export has full stored text (includes <code>operator_chat</code>).</p>
 <style>
 .logs-export-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; width: 100%; max-width: 100%; }
 @media (min-width: 640px) { .logs-export-grid { grid-template-columns: 1fr 1fr; } }
@@ -86,14 +86,7 @@ func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 func buildAuditLogTableHTML(entries []dbconnections.AuditLogEntry, showEngagementCol bool, engLabelByID map[string]string) string {
 	var tbl strings.Builder
 	for _, e := range entries {
-		detail := ""
-		if e.Details != nil {
-			b, _ := json.Marshal(e.Details)
-			detail = string(b)
-			if len(detail) > 360 {
-				detail = detail[:360] + "…"
-			}
-		}
+		detail := formatAuditLogDetails(e)
 		tbl.WriteString("<tr><td>")
 		tbl.WriteString(template.HTMLEscapeString(e.Time.UTC().Format(time.RFC3339)))
 		tbl.WriteString("</td><td>")

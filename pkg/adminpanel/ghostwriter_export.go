@@ -56,6 +56,9 @@ func detailsOutputPreview(d bson.M) string {
 	if d == nil {
 		return ""
 	}
+	if s, ok := d["assistant_reply"].(string); ok && s != "" {
+		return s
+	}
 	if s, ok := d["output_preview"].(string); ok {
 		return s
 	}
@@ -65,6 +68,9 @@ func detailsOutputPreview(d bson.M) string {
 func detailsCommandString(d bson.M) string {
 	if d == nil {
 		return ""
+	}
+	if s, ok := d["user_message"].(string); ok && s != "" {
+		return s
 	}
 	if s, ok := d["command"].(string); ok && s != "" {
 		return s
@@ -111,6 +117,16 @@ func ghostwriterAuditDescription(action string, d bson.M) string {
 	if pn, ok := d["profile_name"].(string); ok && pn != "" {
 		b.WriteString(" | profile=")
 		b.WriteString(pn)
+	}
+	if action == dbconnections.AuditActionAIChat {
+		if p, ok := d["provider"].(string); ok && p != "" {
+			b.WriteString(" | provider=")
+			b.WriteString(p)
+		}
+		if m, ok := d["model"].(string); ok && m != "" {
+			b.WriteString(" | model=")
+			b.WriteString(m)
+		}
 	}
 	return b.String()
 }
@@ -246,6 +262,8 @@ func ghostwriterUserContext(action string) string {
 		return "Admin | user enabled"
 	case dbconnections.AuditActionEngagementOperatorsUpdated:
 		return "Admin | engagement operators updated"
+	case dbconnections.AuditActionAIChat:
+		return "Operator | AI chat"
 	default:
 		return "ReaperC2 | " + action
 	}

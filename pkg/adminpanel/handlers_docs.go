@@ -38,6 +38,7 @@ var docPages = []docPageDef{
 	{"operator-guide-all-logs", "operator-guide-all-logs.md", "All logs", false, true},
 	{"operator-guide-users", "operator-guide-users.md", "Users", false, true},
 	{"operator-guide-account", "operator-guide-account.md", "Account", false, true},
+	{"operator-guide-ai", "operator-guide-ai.md", "Operator AI", false, true},
 	{"docker-compose", "docker-compose.md", "Docker Compose", true, false},
 	{"kubernetes", "kubernetes.md", "Kubernetes", true, false},
 }

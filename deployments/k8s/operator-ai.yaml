@@ -1,0 +1,42 @@
+# Optional Operator AI configuration for ReaperC2 (/ai).
+# Apply after editing API keys: kubectl apply -f deployments/k8s/operator-ai.yaml
+# Requires reaperc2 Deployment to reference these via envFrom (included in full-deployment.yaml variants).
+#
+# Ollama is optional in-cluster; most clusters use OpenAI/Anthropic only. To run Ollama in K8s,
+# deploy it separately and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL to its Service URL.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reaperc2-ai-config
+  namespace: reaperc2-ns
+data:
+  REAPER_AI_ENABLED: "1"
+  REAPER_AI_DEFAULT_MODEL: "auto"
+  REAPER_AI_DEFAULT_PROVIDER: "openai"
+  REAPER_AI_MAX_TOKENS: "2048"
+  # Comma-separated models per provider (shown in UI as "Provider · model").
+  REAPER_AI_OPENAI_MODELS: "gpt-4o-mini,gpt-4o"
+  REAPER_AI_ANTHROPIC_MODELS: "claude-sonnet-4-20250514"
+  # Or one unified list (overrides per-provider *_MODELS when set):
+  # REAPER_AI_MODELS: "openai:gpt-4o-mini,anthropic:claude-sonnet-4-20250514"
+  # Ollama (optional — uncomment if you run Ollama in the cluster or reach one over the network):
+  # REAPER_AI_OLLAMA_ENABLED: "1"
+  # REAPER_AI_OLLAMA_API_URL: "http://ollama.ollama-ns.svc.cluster.local:11434/v1"
+  # REAPER_AI_OLLAMA_MODELS: "llama3.2"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reaperc2-ai-secrets
+  namespace: reaperc2-ns
+type: Opaque
+stringData:
+  # Replace empty values before apply, or patch after create:
+  # kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
+  #   --from-literal=REAPER_AI_OPENAI_API_KEY=sk-... \
+  #   --from-literal=REAPER_AI_ANTHROPIC_API_KEY=sk-ant-... \
+  #   --dry-run=client -o yaml | kubectl apply -f -
+  REAPER_AI_OPENAI_API_KEY: ""
+  REAPER_AI_ANTHROPIC_API_KEY: ""
+  # REAPER_AI_OLLAMA_API_KEY: ""

@@ -186,6 +186,13 @@ spec:
               value: "api_db"
             - name: REAPERC2_ROOT
               value: "/root"
+          envFrom:
+            - configMapRef:
+                name: reaperc2-ai-config
+                optional: true
+            - secretRef:
+                name: reaperc2-ai-secrets
+                optional: true
       imagePullSecrets:
       - name: reaperc2-myregistrykey
 ---

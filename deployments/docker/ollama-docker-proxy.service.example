@@ -1,0 +1,34 @@
+# Optional host systemd alternative to the Compose ollama-proxy service (profile ollama-host).
+# Do not run both at once — they both bind 172.17.0.1:11434.
+#
+# Example: expose Ollama to Docker containers only (not the LAN).
+#
+# Ollama stays on 127.0.0.1:11434 (default systemd). This unit listens on the
+# docker0 bridge IP and forwards to localhost. Other machines on your LAN cannot
+# reach 172.17.0.1 on your host.
+#
+# Install:
+#   sudo apt install socat   # or dnf install socat
+#   ip -4 addr show docker0    # confirm bridge IP (often 172.17.0.1)
+#   sudo cp ollama-docker-proxy.service.example /etc/systemd/system/ollama-docker-proxy.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ollama-docker-proxy.service
+#
+# ReaperC2 .env:
+#   REAPER_AI_OLLAMA_API_URL=http://host.docker.internal:11434/v1
+
+[Unit]
+Description=Forward Ollama (127.0.0.1) to docker0 for container access only
+After=network-online.target ollama.service
+Wants=network-online.target
+Requires=ollama.service
+
+[Service]
+Type=simple
+# If docker0 is not 172.17.0.1, change bind= below after: ip -4 addr show docker0
+ExecStart=/usr/bin/socat TCP-LISTEN:11434,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:11434
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

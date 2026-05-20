@@ -34,8 +34,15 @@ For a full walkthrough of every admin page (especially **Beacons**), see **[Oper
 | **All logs** | Admin-only global audit + exports |
 | **Users** | Admin-only portal accounts |
 | **Account** | Password and optional TOTP 2FA |
+| **Operator AI** | Red team assistant (right-side panel) with engagement context |
 
 Roles: **Admin** (full access) vs **Operator** (no user APIs). Legacy accounts without `role` are treated as Admin.
+
+## Operator AI
+
+Requires an **active engagement** and at least one configured model. List models with `REAPER_AI_*_MODELS` (comma-separated) or `REAPER_AI_MODELS`. See `.env.example` and [Operator AI](/documentation/operator-guide-ai).
+
+Skill text: repository root **`SKILLS.md`** (also used by Cursor agents).
 
 ## Beacon / Scythe
 
