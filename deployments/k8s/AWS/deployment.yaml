@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: reaperc2-deployment
-          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:73e7120
+          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:latest
           resources:
             limits:
               cpu: "1"
@@ -58,6 +58,11 @@ spec:
                 secretKeyRef:
                   name: reaperc2-documentdb-credentials
                   key: database
+            - name: MONGO_AUTH_SOURCE
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: auth_source
             - name: MONGO_TLS_CA_FILE
               value: "/etc/ssl/certs/rds-combined-ca-bundle.pem"
             - name: REAPERC2_ROOT

@@ -6,7 +6,6 @@ namespace: reaperc2-ns
 resources:
   - namespace.yaml
   - ai-config.yaml
-  - ollama.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml
@@ -17,5 +16,14 @@ configMapGenerator:
   - name: docdb-ca-cert
     files:
       - rds-combined-ca-bundle.pem
+    options:
+      disableNameSuffixHash: true
+  - name: docdb-init-scripts
+    files:
+      - scripts/docdb-common.sh
+      - scripts/docdb-init.sh
+      - scripts/docdb-init.js
+      - scripts/docdb-init-user.sh
+      - scripts/docdb-create-user.js
     options:
       disableNameSuffixHash: true

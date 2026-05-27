@@ -51,7 +51,7 @@ Traefik **IngressRoute** in the sample routes **beacon** traffic. If you use ano
 ## Seeding the database
 
 - **OnPrem / in-cluster Mongo**: [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) with `MONGO_HOST` set to the Mongo Service DNS name.
-- **AWS DocumentDB**: use `docdb-mongosh.yaml` or any host that can reach the cluster endpoint with the RDS CA bundle (`fetch-docdb-ca-bundle.sh`); adapt [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) for TLS as needed.
+- **AWS DocumentDB**: run `docdb-init-job.yaml` and `docdb-init-user-job.yaml` from [`deployments/k8s/AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS); use your infra repo or a host with the RDS CA bundle (`fetch-docdb-ca-bundle.sh`) for ad-hoc `mongosh`.
 
 ## Operator AI (multi-model)
 
