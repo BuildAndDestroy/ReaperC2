@@ -1,4 +1,5 @@
-# Optional one-shot Job: create the application DB user (requires DocumentDB master/admin creds).
+# One-shot Job: create or update the application DB user password (requires DocumentDB master/admin creds).
+# Re-run after changing password in documentdb-secret.local.yaml — updates password if user already exists.
 #
 #   kubectl apply -f examples/documentdb-admin-secret.local.yaml
 #   kubectl apply -f examples/documentdb-secret.local.yaml

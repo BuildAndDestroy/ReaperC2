@@ -9,63 +9,114 @@ Kubernetes manifests for ReaperC2 on an **existing** AWS stack:
 
 Infrastructure provisioning (VPC, EKS, DocumentDB, Traefik install) lives in a separate repository. This directory only deploys the application.
 
+## DocumentDB pitfalls (read first)
+
+These caused most deploy pain — avoid them up front:
+
+| Pitfall | What to do |
+|---------|------------|
+| **`auth_source` ≠ `database`** | In `documentdb-secret.local.yaml`, set both to the same value (e.g. `reaperc2_db`). |
+| **Secret password ≠ DocumentDB password** | Changing `.local.yaml` alone is not enough. Run [`docdb-init-user-job`](#sync-documentdb-password) — it **updates** the password if the user already exists. |
+| **Only `User already exists` in logs** | Old behavior; current script prints **`Updated password for existing user`**. Run `kubectl apply -k .` then re-run the user Job. |
+| **`docdb-init` Job errors** | Run `kubectl apply -k .` first (refreshes SCRAM-SHA-1 scripts), then re-apply the Job. |
+| **App still uses wrong auth DB** | `deployment.yaml` reads `auth_source` from the secret. After editing the secret: `kubectl apply -f deployment.yaml` and rollout restart. |
+
+ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Operator AI uses Bedrock (see [Bedrock credentials](#bedrock-credentials-rotation)), not in-cluster Ollama.
+
 ## Run from scratch (checklist)
 
-From the **repo root**, after `make build` and editing manifests (image URI, ingress hostnames, DocumentDB secret):
+From the **repo root**, after [`make build`](#build-and-push):
+
+**0. Edit local files (do not commit secrets)**
 
 ```bash
 cd deployments/k8s/AWS
-
-# 1. RDS/DocumentDB TLS CA (required once per machine; file is gitignored)
-chmod +x fetch-docdb-ca-bundle.sh
-./fetch-docdb-ca-bundle.sh
-
-# 2. DocumentDB secret (templates in examples/ — use *.local.yaml for real values; see examples/README.md)
 cp examples/documentdb-secret.yaml examples/documentdb-secret.local.yaml
-# edit examples/documentdb-secret.local.yaml
+cp examples/documentdb-admin-secret.yaml examples/documentdb-admin-secret.local.yaml
+```
+
+Edit:
+
+- `examples/documentdb-secret.local.yaml` — host, `username`, `password`, `database`, **`auth_source` (same as `database`)**
+- `examples/documentdb-admin-secret.local.yaml` — DocumentDB **master** user (init Job only)
+- `deployment.yaml` — ECR `image:` tag you pushed
+- `ingress.yaml` / `ingressroute.yaml` — beacon hostname
+
+**1. TLS CA bundle** (once per clone; gitignored)
+
+```bash
+chmod +x fetch-docdb-ca-bundle.sh && ./fetch-docdb-ca-bundle.sh
+```
+
+**2. Namespace and secrets**
+
+```bash
 kubectl apply -f namespace.yaml
 kubectl apply -f examples/documentdb-secret.local.yaml
+kubectl apply -f examples/documentdb-admin-secret.local.yaml
 
-# 3. ECR pull secret (replace ACCOUNT and region)
+# ECR pull (replace ACCOUNT / region)
 kubectl create secret docker-registry reaperc2-myregistrykey \
   --namespace=reaperc2-ns \
   --docker-server=ACCOUNT.dkr.ecr.us-east-1.amazonaws.com \
   --docker-username=AWS \
   --docker-password="$(aws ecr get-login-password --region us-east-1)" \
   --dry-run=client -o yaml | kubectl apply -f -
+```
 
-# 4. Optional: create app DB user if it does not exist in DocumentDB yet
-#    cp examples/documentdb-admin-secret.yaml examples/documentdb-admin-secret.local.yaml && edit, then:
-kubectl apply -f examples/documentdb-admin-secret.local.yaml
-kubectl apply -k .    # namespace, ConfigMaps (CA + init scripts), ReaperC2, ingress
+**3. App stack + DocumentDB ConfigMaps**
+
+```bash
+kubectl apply -k .
+```
+
+**4. Sync app user password to DocumentDB** (required on first deploy and after any password change)
+
+```bash
+kubectl delete job docdb-init-user -n reaperc2-ns --ignore-not-found
 kubectl apply -f docdb-init-user-job.yaml
 kubectl wait -n reaperc2-ns job/docdb-init-user --for=condition=complete --timeout=120s
 kubectl logs -n reaperc2-ns job/docdb-init-user
-
-# 5. DocumentDB collections + indexes (idempotent; no sample beacon data)
-kubectl apply -f docdb-init-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
-kubectl logs -n reaperc2-ns job/docdb-init
-
-# 6. If you skipped step 4, apply the app stack now:
-# kubectl apply -k .
-
-# 7. Verify
-kubectl get pods,svc,ingress -n reaperc2-ns
-kubectl logs -n reaperc2-ns deployment/reaperc2-deployment --tail=50
-kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
 ```
 
-**Re-run a failed init Job:** delete the Job, then apply again:
+Logs must include **`Created user`** or **`Updated password for existing user`**.
+
+**5. Collections + indexes** (optional but recommended; idempotent)
 
 ```bash
 kubectl delete job docdb-init -n reaperc2-ns --ignore-not-found
 kubectl apply -f docdb-init-job.yaml
+kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
+kubectl logs -n reaperc2-ns job/docdb-init
 ```
 
-**Auth against `admin`:** if the app user authenticates with `authSource=admin`, uncomment `MONGO_AUTH_SOURCE` in `docdb-init-job.yaml` (and set the same on `deployment.yaml` if needed).
+**6. Verify**
 
-Steps 4–6 are expanded below. If the app user already exists in DocumentDB (created by Terraform/infra), skip step 4 and run step 5 after `kubectl apply -k .`.
+```bash
+kubectl get pods -n reaperc2-ns
+kubectl logs -n reaperc2-ns deployment/reaperc2-deployment --tail=20
+kubectl exec -n reaperc2-ns deployment/reaperc2-deployment -- env | grep '^MONGO_'
+kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
+```
+
+Expect `MONGO_DATABASE` and `MONGO_AUTH_SOURCE` to match your `documentdb-secret.local.yaml`.
+
+### Sync DocumentDB password
+
+Whenever you change `password` (or `username`) in `documentdb-secret.local.yaml`:
+
+```bash
+kubectl apply -f examples/documentdb-secret.local.yaml
+kubectl apply -k .
+kubectl delete job docdb-init-user -n reaperc2-ns --ignore-not-found
+kubectl apply -f docdb-init-user-job.yaml
+kubectl wait -n reaperc2-ns job/docdb-init-user --for=condition=complete --timeout=120s
+kubectl logs -n reaperc2-ns job/docdb-init-user
+kubectl apply -f deployment.yaml
+kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+```
+
+Skip the user Job only if your **infra repo** already created the user with exactly this password and `auth_source`.
 
 ## Prerequisites
 
@@ -110,60 +161,16 @@ Then set `deployment.yaml` `image:` to the tag you pushed (e.g. `123456789012.dk
 | ECR pull secret | `examples/registry-secret.yaml` (commands only) |
 | Operator AI (Bedrock, etc.) | `ai-config.yaml` + Secret `reaperc2-ai-secrets` |
 
-## Deploy (step by step)
+## Deploy (details)
 
-### 1. `fetch-docdb-ca-bundle.sh`
+Use the [checklist](#run-from-scratch-checklist) order. Notes:
 
-ReaperC2 uses `DEPLOY_ENV=AWS`, which enables DocumentDB TLS in [`pkg/dbconnections/mongoconnections.go`](../../../pkg/dbconnections/mongoconnections.go). The script downloads the RDS global PEM into `rds-combined-ca-bundle.pem` (gitignored). Kustomize bakes it into ConfigMap `docdb-ca-cert` on `kubectl apply -k .`.
+- **TLS:** `fetch-docdb-ca-bundle.sh` downloads the RDS PEM into `rds-combined-ca-bundle.pem` (gitignored). Kustomize embeds it in ConfigMap `docdb-ca-cert` on `kubectl apply -k .`. ReaperC2 sets `DEPLOY_ENV=AWS` for DocumentDB TLS ([`pkg/dbconnections/mongoconnections.go`](../../../pkg/dbconnections/mongoconnections.go)).
+- **Secrets:** split keys in `documentdb-secret.local.yaml` (`host`, `username`, `password`, `database`, `auth_source`) — not a single `mongodb-uri`. See [`examples/README.md`](examples/README.md).
+- **User Job:** creates the app user or **updates its password** to match the secret. Required unless infra already created the user with the exact same password and auth database.
+- **Init Job:** idempotent collections/indexes for `clients`, `heartbeat`, `data`, operators, engagements, etc. ReaperC2 also creates admin indexes on startup if you skip this Job.
 
-```bash
-cd deployments/k8s/AWS
-chmod +x fetch-docdb-ca-bundle.sh
-./fetch-docdb-ca-bundle.sh
-```
-
-Re-run this when AWS rotates CA bundles or on a fresh clone before the first `kubectl apply -k .`.
-
-### 2. Secrets
-
-Copy [`examples/documentdb-secret.yaml`](examples/documentdb-secret.yaml) to `examples/documentdb-secret.local.yaml` and edit (see [`examples/README.md`](examples/README.md)). Keys are **`host`**, **`port`**, **`username`**, **`password`**, **`database`**, optional **`auth_source`** — ReaperC2 builds the Mongo URI in Go; do not put a full `mongodb-uri` in the secret.
-
-```bash
-kubectl apply -f namespace.yaml
-kubectl apply -f examples/documentdb-secret.local.yaml
-```
-
-ECR pull secret: see `examples/registry-secret.yaml` or the [checklist](#run-from-scratch-checklist) above.
-
-**Optional app user Job** (skip if infra already created `api_user` / your DB user):
-
-```bash
-kubectl apply -f examples/documentdb-admin-secret.local.yaml
-kubectl apply -k .
-kubectl apply -f docdb-init-user-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init-user --for=condition=complete --timeout=120s
-kubectl logs -n reaperc2-ns job/docdb-init-user
-```
-
-### 3. DocumentDB init Job (`docdb-init-job.yaml`)
-
-Requires: CA bundle on disk, `reaperc2-documentdb-credentials` secret, and ConfigMaps from `kubectl apply -k .` (`docdb-ca-cert`, `docdb-init-scripts`). Idempotent — no sample beacon data.
-
-```bash
-kubectl apply -f docdb-init-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
-kubectl logs -n reaperc2-ns job/docdb-init
-```
-
-Collections: `clients`, `heartbeat`, `data`, `operators`, `operator_sessions`, `engagements`, `audit_logs`, `file_artifacts`, `operator_mfa_challenges`, `beacon_profiles`, `operator_chat`, with indexes aligned to [`pkg/dbconnections`](../../../pkg/dbconnections). ReaperC2 also creates admin/portal indexes on first start if you skip this Job.
-
-### 4. ReaperC2 (`kubectl apply -k .`)
-
-```bash
-kubectl apply -k .
-```
-
-This applies ReaperC2, DocumentDB TLS ConfigMaps, ingress, and `reaperc2-ai-config` (Operator AI defaults to **AWS Bedrock** — no in-cluster Ollama).
+`kubectl apply -k .` applies ReaperC2, ingress, `reaperc2-ai-config` (Bedrock by default), and DocumentDB init scripts.
 
 **Operator AI:** edit `ai-config.yaml` (region, model IDs), then create `reaperc2-ai-secrets` with API keys or use Bedrock IAM/IRSA. Do **not** apply the root [`operator-ai.yaml`](../operator-ai.yaml) ConfigMap — it would overwrite this bundle’s `ai-config.yaml`.
 
@@ -171,12 +178,48 @@ This applies ReaperC2, DocumentDB TLS ConfigMaps, ingress, and `reaperc2-ai-conf
 kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
   --from-literal=REAPER_AI_BEDROCK_ACCESS_KEY_ID=... \
   --from-literal=REAPER_AI_BEDROCK_SECRET_ACCESS_KEY=... \
+  --from-literal=REAPER_AI_BEDROCK_SESSION_TOKEN=... \
   --from-literal=REAPER_AI_OPENAI_API_KEY=sk-... \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
 ```
 
 See [Operator AI](../../../docs/operator-guide-ai.md) for Bedrock inference profile IDs and IAM.
+
+### Bedrock credentials (rotation)
+
+ReaperC2 reads Bedrock creds from Secret **`reaperc2-ai-secrets`** at **pod start**. Updating the Secret alone does not refresh running pods — you must **roll out** after every credential change.
+
+| What you use | Keys in `reaperc2-ai-secrets` |
+|--------------|-------------------------------|
+| **Bedrock API key** (console “Generate API key”) | `REAPER_AI_BEDROCK_API_KEY` |
+| **Temporary IAM** (SSO / STS, often ~12h) | `REAPER_AI_BEDROCK_ACCESS_KEY_ID`, `REAPER_AI_BEDROCK_SECRET_ACCESS_KEY`, **`REAPER_AI_BEDROCK_SESSION_TOKEN`** |
+| **Long-lived IAM user** | access key + secret (no session token) |
+
+**When keys rotate (e.g. every 12 hours):**
+
+```bash
+# Temporary IAM (include session token) or a new Bedrock API key:
+kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
+  --from-literal=REAPER_AI_BEDROCK_ACCESS_KEY_ID=AKIA... \
+  --from-literal=REAPER_AI_BEDROCK_SECRET_ACCESS_KEY=... \
+  --from-literal=REAPER_AI_BEDROCK_SESSION_TOKEN=... \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Or Bedrock API key only:
+# --from-literal=REAPER_AI_BEDROCK_API_KEY='...'
+
+kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+kubectl rollout status deployment/reaperc2-deployment -n reaperc2-ns
+```
+
+**Recommended on EKS — IRSA (no manual 12h updates):** attach a Bedrock-capable IAM role to the ReaperC2 ServiceAccount, set in `ai-config.yaml`:
+
+```yaml
+REAPER_AI_BEDROCK_USE_IAM: "1"
+```
+
+Remove Bedrock keys from `reaperc2-ai-secrets`, `kubectl apply -k .`, and restart once. The AWS SDK uses the pod role; EKS refreshes the web identity token automatically.
 
 If you previously deployed in-cluster Ollama, remove leftovers:
 
@@ -212,7 +255,7 @@ Open `http://127.0.0.1:8443` locally.
 | `ingressroute.yaml` | Traefik `IngressRoute` (beacon :8080) |
 | `fetch-docdb-ca-bundle.sh` | Downloads RDS global CA PEM |
 | `docdb-init-job.yaml` | One-shot Job: collections + indexes |
-| `docdb-init-user-job.yaml` | Optional Job: create app DB user via master creds |
+| `docdb-init-user-job.yaml` | Create/update app DB user password (master creds) |
 | `scripts/docdb-init.js` | Idempotent schema script (used by init Job) |
 | `examples/documentdb-secret.yaml` | DocumentDB secret **template** (placeholders) |
 | `examples/documentdb-secret.local.yaml` | Your real secret (gitignored) |
@@ -232,36 +275,13 @@ kubectl logs -n reaperc2-ns deployment/reaperc2-deployment --previous --tail=30
 
 | Log line | Fix |
 |----------|-----|
-| `MongoDB Ping Error` / `authentication failed` | **Wrong `authSource`:** set `auth_source` in the secret to your DB name (e.g. `reaperc2_db`) or `kubectl set env deployment/reaperc2-deployment -n reaperc2-ns MONGO_AUTH_SOURCE=reaperc2_db`. **Password mismatch:** the DocumentDB user password must match the secret — fix the secret, then drop/recreate the user with `docdb-init-user-job.yaml` (see below) or update the password with your infra tooling. |
+| `MongoDB Ping Error` / `authentication failed` | See [DocumentDB pitfalls](#documentdb-pitfalls-read-first) and [Sync DocumentDB password](#sync-documentdb-password). Usually `auth_source` ≠ `database` or secret password not synced to DocumentDB. |
 | `MONGO_HOST` / `MONGO_PASSWORD` required | Secret `reaperc2-documentdb-credentials` missing or not applied. |
 | `connection() error` / TLS | Re-run `./fetch-docdb-ca-bundle.sh` and `kubectl apply -k .` so ConfigMap `docdb-ca-cert` is present. |
 | `Unsupported mechanism [ -301 ]` on **docdb-init** Job | DocumentDB needs **SCRAM-SHA-1** for `mongosh` (fixed in current scripts). Run `kubectl apply -k .` to refresh `docdb-init-scripts`, delete the Job, and re-apply `docdb-init-job.yaml`. ReaperC2 itself may still run — indexes are also created on app startup. |
 | `Beacon API listening` then exit | Rare; check full logs for admin/beacon bind errors. |
 
-**Password typo (secret ≠ DocumentDB user)**
-
-```bash
-# 1. Fix examples/documentdb-secret.local.yaml (password + auth_source), then:
-kubectl apply -f examples/documentdb-secret.local.yaml
-
-# 2. Recreate app user (master creds in documentdb-admin-secret.yaml)
-kubectl apply -f examples/documentdb-admin-secret.local.yaml
-kubectl delete job docdb-init-user -n reaperc2-ns --ignore-not-found
-kubectl apply -f docdb-init-user-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init-user --for=condition=complete --timeout=120s
-
-# 3. Restart ReaperC2
-kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
-```
-
-If `createUser` fails because the user already exists, drop the user from DocumentDB with your infra repo / `mongosh`, then re-run the Job.
-
-After the user Job succeeds, run the schema Job if you have not already:
-
-```bash
-kubectl apply -f docdb-init-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
-```
+**Auth still failing?** Run the full [Sync DocumentDB password](#sync-documentdb-password) block and confirm pod env: `kubectl exec -n reaperc2-ns deployment/reaperc2-deployment -- env | grep '^MONGO_'`.
 
 ## Teardown (app only)
 

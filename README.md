@@ -356,4 +356,4 @@ kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=12
 * DocumentDB: split secret keys (`host`, `username`, …), not a single URI; run **`fetch-docdb-ca-bundle.sh`** then **`docdb-init-job.yaml`** for collections/indexes.
 * **Operator AI on EKS:** **AWS Bedrock** (and optional OpenAI/Anthropic) via `ai-config.yaml` + `reaperc2-ai-secrets` — see AWS README and [Operator AI](docs/operator-guide-ai.md).
 
-Full checklist: [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).
+Full checklist (read [DocumentDB pitfalls](deployments/k8s/AWS/README.md#documentdb-pitfalls-read-first) first): [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).

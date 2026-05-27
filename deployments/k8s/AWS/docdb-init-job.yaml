@@ -53,9 +53,11 @@ spec:
                 secretKeyRef:
                   name: reaperc2-documentdb-credentials
                   key: database
-            # Uncomment if your DocumentDB user authenticates against admin:
-            # - name: MONGO_AUTH_SOURCE
-            #   value: "admin"
+            - name: MONGO_AUTH_SOURCE
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: auth_source
           volumeMounts:
             - name: scripts
               mountPath: /scripts

@@ -1,4 +1,4 @@
-// Create the ReaperC2 application user (idempotent). Requires admin connection (authSource=admin).
+// Create or update the ReaperC2 application user (idempotent). Requires admin connection (authSource=admin).
 const dbName = process.env.MONGO_DATABASE;
 const appUser = process.env.MONGO_USERNAME;
 const appPass = process.env.MONGO_PASSWORD;
@@ -18,7 +18,8 @@ try {
   print("Created user " + appUser);
 } catch (e) {
   if (e.codeName === "DuplicateKey" || String(e).includes("already exists")) {
-    print("User already exists: " + appUser);
+    targetDb.updateUser(appUser, { pwd: appPass });
+    print("Updated password for existing user " + appUser);
   } else {
     throw e;
   }
