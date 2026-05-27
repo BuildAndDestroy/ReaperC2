@@ -86,8 +86,13 @@ func buildMongoURI(env string) string {
 			q.Set("tlsCAFile", tlsCAFile)
 		}
 	}
-	if as := getEnvWithDefault("MONGO_AUTH_SOURCE", ""); as != "" {
-		q.Set("authSource", as)
+	authSource := getEnvWithDefault("MONGO_AUTH_SOURCE", "")
+	if authSource == "" && strings.ToUpper(env) == "AWS" {
+		// DocumentDB app users are created on the app database; driver default is admin.
+		authSource = database
+	}
+	if authSource != "" {
+		q.Set("authSource", authSource)
 	}
 	if len(q) > 0 {
 		u.RawQuery = q.Encode()

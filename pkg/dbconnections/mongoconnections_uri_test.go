@@ -33,3 +33,24 @@ func TestBuildMongoURI_encodesPasswordWithSpecialChars(t *testing.T) {
 		t.Fatalf("decoded password = %q", pass)
 	}
 }
+
+func TestBuildMongoURI_AWS_defaultsAuthSourceToDatabase(t *testing.T) {
+	t.Setenv("MONGO_HOST", "docdb.example.com")
+	t.Setenv("MONGO_PORT", "27017")
+	t.Setenv("MONGO_USERNAME", "reaperc2-user")
+	t.Setenv("MONGO_PASSWORD", "secret")
+	t.Setenv("MONGO_DATABASE", "reaperc2_db")
+	t.Setenv("MONGO_AUTH_SOURCE", "")
+
+	uri := buildMongoURI("AWS")
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		t.Fatalf("parse uri: %v", err)
+	}
+	if parsed.Query().Get("authSource") != "reaperc2_db" {
+		t.Fatalf("authSource = %q, want reaperc2_db", parsed.Query().Get("authSource"))
+	}
+	if parsed.Query().Get("tls") != "true" {
+		t.Fatalf("tls = %q, want true", parsed.Query().Get("tls"))
+	}
+}

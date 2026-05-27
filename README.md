@@ -236,7 +236,7 @@ make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reape
 **Deploy to EKS after push**
 
 1. Set the image in [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
-2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md) (DocumentDB secret, CA bundle, `kubectl apply -k deployments/k8s/AWS`).
+2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) (`fetch-docdb-ca-bundle.sh`, DocumentDB secret, init Jobs, `kubectl apply -k deployments/k8s/AWS`).
 3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
 
 ### Docker build (single arch, any registry)
@@ -340,13 +340,20 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 ```bash
 make build   # or: make build IMAGE_TAG=v1.0.0
-# Pin the pushed tag in deployments/k8s/AWS/deployment.yaml (default in repo: git short SHA)
-kubectl apply -k deployments/k8s/AWS
+# Edit deployments/k8s/AWS/deployment.yaml (ECR image), ingress hostnames, examples/documentdb-secret.yaml
+
+cd deployments/k8s/AWS
+./fetch-docdb-ca-bundle.sh
+kubectl apply -f namespace.yaml -f examples/documentdb-secret.yaml
+# ECR pull secret + optional docdb-init-user-job.yaml — see AWS README
+kubectl apply -k .
+kubectl apply -f docdb-init-job.yaml
+kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
 ```
 
 * Point **Ingress / IngressRoute** only at Service port **8080** (beacon).
 * Set your subdomain and TLS issuer in `ingress.yaml` / `ingressroute.yaml` (staging vs prod cert-manager issuer).
-* DocumentDB credentials and ECR pull secret: `deployments/k8s/AWS/examples/`.
-* **Operator AI on EKS:** in-cluster **Ollama** (`gpt-oss:latest`) via `ollama.yaml` + `ai-config.yaml`; optional **AWS Bedrock** via `reaperc2-ai-secrets` (see AWS README and [Operator AI](docs/operator-guide-ai.md)).
+* DocumentDB: split secret keys (`host`, `username`, …), not a single URI; run **`fetch-docdb-ca-bundle.sh`** then **`docdb-init-job.yaml`** for collections/indexes.
+* **Operator AI on EKS:** **AWS Bedrock** (and optional OpenAI/Anthropic) via `ai-config.yaml` + `reaperc2-ai-secrets` — see AWS README and [Operator AI](docs/operator-guide-ai.md).
 
-More detail: [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md) and [`docs/kubernetes.md`](docs/kubernetes.md).
+Full checklist: [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).

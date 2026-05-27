@@ -1,0 +1,73 @@
+# One-shot Job: create ReaperC2 collections and indexes on DocumentDB.
+# Prerequisite: reaperc2-documentdb-credentials secret and docdb-ca-cert ConfigMap (run fetch-docdb-ca-bundle.sh + kubectl apply -k).
+#
+#   kubectl apply -f examples/documentdb-secret.local.yaml
+#   kubectl apply -f docdb-init-job.yaml
+#   kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
+#   kubectl logs -n reaperc2-ns job/docdb-init
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: docdb-init
+  namespace: reaperc2-ns
+  labels:
+    app: docdb-init
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: docdb-init
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: mongo:7.0
+          command: ["/bin/bash", "/scripts/docdb-init.sh"]
+          env:
+            - name: MONGO_TLS_CA_FILE
+              value: "/certs/rds-combined-ca-bundle.pem"
+            - name: MONGO_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: host
+            - name: MONGO_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: port
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: password
+            - name: MONGO_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: database
+            # Uncomment if your DocumentDB user authenticates against admin:
+            # - name: MONGO_AUTH_SOURCE
+            #   value: "admin"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: ca-cert
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: docdb-init-scripts
+            defaultMode: 0555
+        - name: ca-cert
+          configMap:
+            name: docdb-ca-cert

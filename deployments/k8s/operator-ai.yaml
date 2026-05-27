@@ -2,8 +2,8 @@
 # Apply after editing API keys: kubectl apply -f deployments/k8s/operator-ai.yaml
 # Requires reaperc2 Deployment to reference these via envFrom (included in full-deployment.yaml variants).
 #
-# Ollama: for AWS EKS use deployments/k8s/AWS/ (includes ollama.yaml + ai-config.yaml).
-# Other clusters: deploy Ollama separately and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL.
+# AWS EKS: use deployments/k8s/AWS/ai-config.yaml (Bedrock/cloud; no in-cluster Ollama).
+# Ollama: deploy separately if needed and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL.
 
 apiVersion: v1
 kind: ConfigMap
