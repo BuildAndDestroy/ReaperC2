@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: reaperc2-ns
+
+resources:
+  - namespace.yaml
+  - ai-config.yaml
+  - ollama.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - ingressroute.yaml
+
+# Download the RDS trust bundle first: ./fetch-docdb-ca-bundle.sh
+configMapGenerator:
+  - name: docdb-ca-cert
+    files:
+      - rds-combined-ca-bundle.pem
+    options:
+      disableNameSuffixHash: true

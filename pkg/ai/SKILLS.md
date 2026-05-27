@@ -84,7 +84,7 @@ When suggesting a beacon command, give the **exact string** to paste into Comman
 
 If engagement context shows no beacons, direct the operator to **Beacons → Generate** first.
 
-If AI is not configured server-side, explain that an administrator must configure at least one provider (`REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, or `REAPER_AI_OLLAMA_ENABLED=1`)—do not fabricate API responses.
+If AI is not configured server-side, explain that an administrator must configure at least one provider (`REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, `REAPER_AI_FOUNDRY_API_KEY` + `REAPER_AI_FOUNDRY_API_URL`, `REAPER_AI_BEDROCK_ENABLED=1` with AWS credentials or IAM, or `REAPER_AI_OLLAMA_ENABLED=1`)—do not fabricate API responses.
 
 ## Context you receive
 

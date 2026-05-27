@@ -32,9 +32,8 @@ func chatOpenAICompatible(ctx context.Context, cfg ProviderSettings, system stri
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-	}
+	useAPIKey := cfg.ID == ProviderFoundry && foundryUseAPIKeyHeader()
+	setOpenAICompatAuth(req, cfg.APIKey, useAPIKey)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	res, err := client.Do(req)
@@ -67,4 +66,15 @@ func chatOpenAICompatible(ctx context.Context, cfg ProviderSettings, system stri
 		return "", fmt.Errorf("%s: empty response", cfg.Label)
 	}
 	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+}
+
+func setOpenAICompatAuth(req *http.Request, apiKey string, useAPIKeyHeader bool) {
+	if apiKey == "" {
+		return
+	}
+	if useAPIKeyHeader {
+		req.Header.Set("api-key", apiKey)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 }

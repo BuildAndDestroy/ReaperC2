@@ -1,0 +1,19 @@
+# Operator AI ConfigMap for AWS EKS (in-cluster Ollama). API keys stay in reaperc2-ai-secrets
+# (deployments/k8s/operator-ai.yaml or your own Secret).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reaperc2-ai-config
+data:
+  REAPER_AI_ENABLED: "1"
+  REAPER_AI_DEFAULT_MODEL: "ollama:gpt-oss:latest"
+  REAPER_AI_DEFAULT_PROVIDER: "ollama"
+  REAPER_AI_MAX_TOKENS: "2048"
+  REAPER_AI_OLLAMA_ENABLED: "1"
+  REAPER_AI_OLLAMA_API_URL: "http://ollama:11434/v1"
+  REAPER_AI_OLLAMA_MODELS: "gpt-oss:latest"
+  # Optional cloud providers (set keys in reaperc2-ai-secrets):
+  # REAPER_AI_OPENAI_MODELS: "gpt-4o-mini,gpt-4o"
+  # REAPER_AI_ANTHROPIC_MODELS: "claude-sonnet-4-20250514"
+  # REAPER_AI_BEDROCK_ENABLED: "1"
+  # REAPER_AI_BEDROCK_REGION: "us-east-1"

@@ -1,24 +1,45 @@
-FROM golang:1.23.1
-COPY . /root/
+# syntax=docker/dockerfile:1.7
+# Compile inside Docker using vendored modules (run `make vendor` on the host first).
+# On Apple Silicon, prefer `make build` (cross-compiles on the host, then Dockerfile.pack).
+FROM golang:1.24-bookworm AS builder
 
-# Scythe sources: prefer the git submodule copied in from the host. If missing (CI tarball, fresh clone
-# without submodule init), clone from GitHub so `docker build` does not require a prior submodule step.
-# For the exact commit pinned in this repo, run `git submodule update --init` before build so COPY
-# includes third_party/Scythe; otherwise the clone uses SCYTHE_GIT_REF (default: main).
+ARG TARGETOS=linux
+ARG TARGETARCH
 ARG SCYTHE_GIT_REF=main
 ARG SCYTHE_REPO=https://github.com/BuildAndDestroy/Scythe.git
-RUN set -eux; \
-  if [ ! -f /root/third_party/Scythe/go.mod ]; then \
-    mkdir -p /root/third_party; \
-    rm -rf /root/third_party/Scythe; \
-    git clone --depth 1 --branch "${SCYTHE_GIT_REF}" "${SCYTHE_REPO}" /root/third_party/Scythe; \
-  fi; \
-  test -f /root/third_party/Scythe/go.mod
 
-WORKDIR /root/cmd/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o ReaperC2
-# Process cwd must be repo root so runtime `go build` for Scythe.embedded finds third_party/Scythe (see pkg/scythebuild).
+ENV CGO_ENABLED=0 \
+    GOTELEMETRY=off
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+COPY vendor/ vendor/
+
+COPY . .
+
+RUN set -eux; \
+  if [ ! -f third_party/Scythe/go.mod ]; then \
+    mkdir -p third_party; \
+    rm -rf third_party/Scythe; \
+    git clone --depth 1 --branch "${SCYTHE_GIT_REF}" "${SCYTHE_REPO}" third_party/Scythe; \
+  fi; \
+  test -f third_party/Scythe/go.mod
+
+WORKDIR /src/cmd
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+    go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/ReaperC2 .
+
+FROM golang:1.24-bookworm
+
+COPY --from=builder /src /root
+COPY --from=builder /out/ReaperC2 /root/cmd/ReaperC2
+
 WORKDIR /root
-ENV DEPLOY_ENV="ONPREM"
+
+ARG DEPLOY_ENV=ONPREM
+ENV DEPLOY_ENV=${DEPLOY_ENV}
+
 EXPOSE 8080 8443
-ENTRYPOINT [ "/root/cmd/ReaperC2" ]
+ENTRYPOINT ["/root/cmd/ReaperC2"]

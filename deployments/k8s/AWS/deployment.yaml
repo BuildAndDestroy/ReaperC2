@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reaperc2-deployment
+  labels:
+    app: reaperc2-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reaperc2-deployment
+  template:
+    metadata:
+      labels:
+        app: reaperc2-deployment
+    spec:
+      containers:
+        - name: reaperc2-deployment
+          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:73e7120
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: beacon
+            - containerPort: 8443
+              name: admin
+          env:
+            - name: DEPLOY_ENV
+              value: "AWS"
+            - name: MONGO_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: host
+            - name: MONGO_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: port
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: password
+            - name: MONGO_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-documentdb-credentials
+                  key: database
+            - name: MONGO_TLS_CA_FILE
+              value: "/etc/ssl/certs/rds-combined-ca-bundle.pem"
+            - name: REAPERC2_ROOT
+              value: "/root"
+          envFrom:
+            - configMapRef:
+                name: reaperc2-ai-config
+                optional: true
+            - secretRef:
+                name: reaperc2-ai-secrets
+                optional: true
+          volumeMounts:
+            - name: docdb-ca-volume
+              mountPath: /etc/ssl/certs/rds-combined-ca-bundle.pem
+              subPath: rds-combined-ca-bundle.pem
+              readOnly: true
+      volumes:
+        - name: docdb-ca-volume
+          configMap:
+            name: docdb-ca-cert
+      imagePullSecrets:
+        - name: reaperc2-myregistrykey

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -63,33 +64,36 @@ func buildMongoURI(env string) string {
 		log.Fatal("MONGO_PASSWORD environment variable is required")
 	}
 
-	// Build base URI
-	uri := fmt.Sprintf("mongodb://%s:%s@%s:%s/%s", username, password, host, port, database)
+	// Build URI with encoded credentials (passwords may contain ?, &, @, etc.).
+	u := &url.URL{
+		Scheme: "mongodb",
+		Host:   net.JoinHostPort(host, port),
+		Path:   "/" + database,
+	}
+	u.User = url.UserPassword(username, password)
 
-	// Add TLS configuration for AWS DocumentDB
+	q := url.Values{}
 	if strings.ToUpper(env) == "AWS" {
 		tlsCAFile := getEnvWithDefault("MONGO_TLS_CA_FILE", "/etc/ssl/certs/rds-combined-ca-bundle.pem")
-		// DocumentDB requires TLS with specific connection parameters
-		uri += "?tls=true&tlsCAFile=" + tlsCAFile + "&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
-	} else {
-		// For on-prem, check if TLS is explicitly requested
-		if useTLS := getEnvWithDefault("MONGO_USE_TLS", "false"); strings.ToLower(useTLS) == "true" {
-			uri += "?tls=true"
-			if tlsCAFile := os.Getenv("MONGO_TLS_CA_FILE"); tlsCAFile != "" {
-				uri += "&tlsCAFile=" + tlsCAFile
-			}
+		q.Set("tls", "true")
+		q.Set("tlsCAFile", tlsCAFile)
+		q.Set("replicaSet", "rs0")
+		q.Set("readPreference", "secondaryPreferred")
+		q.Set("retryWrites", "false")
+	} else if useTLS := getEnvWithDefault("MONGO_USE_TLS", "false"); strings.ToLower(useTLS) == "true" {
+		q.Set("tls", "true")
+		if tlsCAFile := os.Getenv("MONGO_TLS_CA_FILE"); tlsCAFile != "" {
+			q.Set("tlsCAFile", tlsCAFile)
 		}
 	}
-
 	if as := getEnvWithDefault("MONGO_AUTH_SOURCE", ""); as != "" {
-		sep := "?"
-		if strings.Contains(uri, "?") {
-			sep = "&"
-		}
-		uri += sep + "authSource=" + url.QueryEscape(as)
+		q.Set("authSource", as)
+	}
+	if len(q) > 0 {
+		u.RawQuery = q.Encode()
 	}
 
-	return uri
+	return u.String()
 }
 
 // Connect to database for the correct environment

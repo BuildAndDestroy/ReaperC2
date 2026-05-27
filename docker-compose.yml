@@ -27,9 +27,9 @@ services:
   reaperc2:
     env_file:
       - .env
-    # Linux: map host.docker.internal to the host (Docker Desktop sets this automatically).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # Do not set extra_hosts host.docker.internal:host-gateway here — on Docker Desktop (Mac/Windows)
+    # it overrides the built-in host mapping with the bridge IP (172.17.0.1), which breaks host Ollama.
+    # Linux Compose v2+ provides host.docker.internal automatically when needed.
     build:
       context: .
       dockerfile: Dockerfile

@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1.7
+# Package a host-built ReaperC2 binary (see `make build-binaries`). No `go build` in Docker.
+FROM golang:1.24-bookworm
+
+ARG TARGETARCH
+ARG SCYTHE_GIT_REF=main
+ARG SCYTHE_REPO=https://github.com/BuildAndDestroy/Scythe.git
+
+WORKDIR /root
+
+COPY . /root
+COPY bin/linux-${TARGETARCH}/ReaperC2 /root/cmd/ReaperC2
+
+RUN set -eux; \
+  test -f /root/cmd/ReaperC2; \
+  test -f third_party/Scythe/go.mod || { \
+    mkdir -p third_party; \
+    rm -rf third_party/Scythe; \
+    git clone --depth 1 --branch "${SCYTHE_GIT_REF}" "${SCYTHE_REPO}" third_party/Scythe; \
+  }; \
+  test -f third_party/Scythe/go.mod
+
+ARG DEPLOY_ENV=ONPREM
+ENV DEPLOY_ENV=${DEPLOY_ENV}
+
+EXPOSE 8080 8443
+ENTRYPOINT ["/root/cmd/ReaperC2"]
