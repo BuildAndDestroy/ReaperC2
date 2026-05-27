@@ -74,7 +74,7 @@ func (s *Server) handleAPIAIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ai.AnyConfigured() {
-		jsonError(w, http.StatusServiceUnavailable, "AI assistant not configured (configure OpenAI, Anthropic, or Ollama)")
+		jsonError(w, http.StatusServiceUnavailable, "AI assistant not configured (configure OpenAI, Anthropic, AWS Bedrock, or Ollama)")
 		return
 	}
 

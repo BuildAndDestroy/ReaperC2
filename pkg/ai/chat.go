@@ -22,7 +22,7 @@ type ChatResult struct {
 // Chat routes to the selected catalog model (or Auto) and provider backend.
 func Chat(ctx context.Context, modelID, systemExtra string, messages []Message) (ChatResult, error) {
 	if !AnyConfigured() {
-		return ChatResult{}, fmt.Errorf("AI assistant is not configured (set provider API keys or enable Ollama)")
+		return ChatResult{}, fmt.Errorf("AI assistant is not configured (set provider API keys, enable Ollama, configure AWS Bedrock, or Azure AI Foundry)")
 	}
 	cfg, err := ResolveModel(modelID)
 	if err != nil {
@@ -38,6 +38,8 @@ func Chat(ctx context.Context, modelID, systemExtra string, messages []Message) 
 	switch cfg.ID {
 	case ProviderAnthropic:
 		reply, err = chatAnthropic(ctx, cfg, system, msgs)
+	case ProviderBedrock:
+		reply, err = chatBedrock(ctx, cfg, system, msgs)
 	default:
 		// OpenAI and Ollama both use OpenAI-compatible /chat/completions.
 		reply, err = chatOpenAICompatible(ctx, cfg, system, msgs)

@@ -2,8 +2,8 @@
 # Apply after editing API keys: kubectl apply -f deployments/k8s/operator-ai.yaml
 # Requires reaperc2 Deployment to reference these via envFrom (included in full-deployment.yaml variants).
 #
-# Ollama is optional in-cluster; most clusters use OpenAI/Anthropic only. To run Ollama in K8s,
-# deploy it separately and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL to its Service URL.
+# Ollama: for AWS EKS use deployments/k8s/AWS/ (includes ollama.yaml + ai-config.yaml).
+# Other clusters: deploy Ollama separately and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL.
 
 apiVersion: v1
 kind: ConfigMap
@@ -18,8 +18,13 @@ data:
   # Comma-separated models per provider (shown in UI as "Provider · model").
   REAPER_AI_OPENAI_MODELS: "gpt-4o-mini,gpt-4o"
   REAPER_AI_ANTHROPIC_MODELS: "claude-sonnet-4-20250514"
+  # AWS Bedrock (EKS: set REAPER_AI_BEDROCK_USE_IAM=1 and use IRSA; omit keys in Secret)
+  # REAPER_AI_BEDROCK_ENABLED: "1"
+  # REAPER_AI_BEDROCK_REGION: "us-east-1"
+  # REAPER_AI_BEDROCK_USE_IAM: "1"
+  # REAPER_AI_BEDROCK_MODELS: "anthropic.claude-sonnet-4-6"
   # Or one unified list (overrides per-provider *_MODELS when set):
-  # REAPER_AI_MODELS: "openai:gpt-4o-mini,anthropic:claude-sonnet-4-20250514"
+  # REAPER_AI_MODELS: "openai:gpt-4o-mini,anthropic:claude-sonnet-4-20250514,bedrock:anthropic.claude-sonnet-4-6"
   # Ollama (optional — uncomment if you run Ollama in the cluster or reach one over the network):
   # REAPER_AI_OLLAMA_ENABLED: "1"
   # REAPER_AI_OLLAMA_API_URL: "http://ollama.ollama-ns.svc.cluster.local:11434/v1"
@@ -39,4 +44,8 @@ stringData:
   #   --dry-run=client -o yaml | kubectl apply -f -
   REAPER_AI_OPENAI_API_KEY: ""
   REAPER_AI_ANTHROPIC_API_KEY: ""
+  # REAPER_AI_BEDROCK_API_KEY: ""
+  # REAPER_AI_BEDROCK_ACCESS_KEY_ID: ""
+  # REAPER_AI_BEDROCK_SECRET_ACCESS_KEY: ""
+  # REAPER_AI_BEDROCK_SESSION_TOKEN: ""
   # REAPER_AI_OLLAMA_API_KEY: ""

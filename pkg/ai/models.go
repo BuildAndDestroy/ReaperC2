@@ -19,11 +19,16 @@ type ModelOption struct {
 
 // EnabledModels returns configured provider/model pairs (excludes Auto).
 func EnabledModels() []ModelOption {
+	var out []ModelOption
 	if unified := strings.TrimSpace(os.Getenv("REAPER_AI_MODELS")); unified != "" {
-		return filterEnabled(parseUnifiedModelList(unified))
+		out = append(out, filterEnabled(parseUnifiedModelList(unified))...)
+		out = append(out, discoveredProviderModelOptions(out, ProviderOpenAI, openaiModelsDiscoveredOrConfigured)...)
+		out = append(out, discoveredProviderModelOptions(out, ProviderAnthropic, anthropicModelsDiscoveredOrConfigured)...)
+		out = append(out, discoveredProviderModelOptions(out, ProviderFoundry, foundryModelsDiscoveredOrConfigured)...)
+		out = append(out, discoveredProviderModelOptions(out, ProviderOllama, ollamaModelsDiscoveredOrConfigured)...)
+		return dedupeModelOptions(out)
 	}
 	providers := loadAllProviders()
-	var out []ModelOption
 	for _, p := range providers {
 		if !p.Configured {
 			continue
@@ -33,6 +38,37 @@ func EnabledModels() []ModelOption {
 		}
 	}
 	return out
+}
+
+// discoveredProviderModelOptions adds live/env model names not already in the catalog.
+func discoveredProviderModelOptions(existing []ModelOption, providerID string, namesFn func() []string) []ModelOption {
+	p, ok := providerSettingsByID(providerID)
+	if !ok {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, m := range existing {
+		if m.Provider == providerID {
+			seen[m.Model] = true
+		}
+	}
+	var extra []ModelOption
+	for _, name := range namesFn() {
+		if seen[name] {
+			continue
+		}
+		extra = append(extra, modelOption(p, name))
+	}
+	return extra
+}
+
+func providerSettingsByID(providerID string) (ProviderSettings, bool) {
+	for _, p := range loadAllProviders() {
+		if p.ID == providerID && p.Configured {
+			return p, true
+		}
+	}
+	return ProviderSettings{}, false
 }
 
 // DefaultModelID returns the default selection for Auto (env or first enabled model).
@@ -122,6 +158,9 @@ func normalizeModelID(id string) string {
 
 func modelOption(p ProviderSettings, model string) ModelOption {
 	model = strings.TrimSpace(model)
+	if p.ID == ProviderBedrock {
+		model = bedrockConverseModelID(model)
+	}
 	return ModelOption{
 		ID:       p.ID + ":" + model,
 		Label:    p.Label + " · " + model,
@@ -133,17 +172,21 @@ func modelOption(p ProviderSettings, model string) ModelOption {
 func providerModelNames(providerID string) []string {
 	switch providerID {
 	case ProviderOpenAI:
-		return modelNamesFromEnv("REAPER_AI_OPENAI_MODELS", "REAPER_AI_OPENAI_MODEL", "REAPER_AI_MODEL")
+		return openaiModelNamesMerged()
 	case ProviderAnthropic:
-		return modelNamesFromEnv("REAPER_AI_ANTHROPIC_MODELS", "REAPER_AI_ANTHROPIC_MODEL", "")
+		return anthropicModelNamesMerged()
+	case ProviderFoundry:
+		return foundryModelNamesMerged()
 	case ProviderOllama:
-		return modelNamesFromEnv("REAPER_AI_OLLAMA_MODELS", "REAPER_AI_OLLAMA_MODEL", "")
+		return ollamaModelNamesMerged()
+	case ProviderBedrock:
+		return bedrockModelNamesMerged()
 	default:
 		return nil
 	}
 }
 
-func modelNamesFromEnv(listKey, singleKey, legacySingleKey string) []string {
+func modelNamesFromEnvOnly(listKey, singleKey, legacySingleKey string) []string {
 	if s := strings.TrimSpace(os.Getenv(listKey)); s != "" {
 		return dedupeStrings(splitCSV(s))
 	}
@@ -155,15 +198,26 @@ func modelNamesFromEnv(listKey, singleKey, legacySingleKey string) []string {
 			return []string{s}
 		}
 	}
+	return nil
+}
+
+func modelNamesFromEnv(listKey, singleKey, legacySingleKey string) []string {
+	if names := modelNamesFromEnvOnly(listKey, singleKey, legacySingleKey); len(names) > 0 {
+		return names
+	}
 	// Provider defaults when configured but no model env set.
 	switch singleKey {
 	case "REAPER_AI_OPENAI_MODEL":
-		return []string{"gpt-4o-mini"}
+		return defaultOpenAIModels()
 	case "REAPER_AI_ANTHROPIC_MODEL":
-		return []string{"claude-sonnet-4-20250514"}
+		return defaultAnthropicModels()
 	case "REAPER_AI_OLLAMA_MODEL":
 		if strings.TrimSpace(os.Getenv("REAPER_AI_OLLAMA_ENABLED")) == "1" {
 			return []string{"llama3.2"}
+		}
+	case "REAPER_AI_BEDROCK_MODEL":
+		if bedrockRegionFromEnv() != "" && bedrockCanAuthenticate() {
+			return resolveBedrockModelIDs(defaultBedrockModels())
 		}
 	}
 	return nil

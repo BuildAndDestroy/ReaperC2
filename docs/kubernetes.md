@@ -3,7 +3,8 @@
 Example and environment-specific manifests live under [`deployments/k8s/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/), including:
 
 - [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) — namespace, MongoDB, ReaperC2, Traefik **IngressRoute**, beacon-facing service (sample placeholders for secrets and NFS).
-- [`OnPrem/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/OnPrem/) and [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) — variants and Terraform notes.
+- [`OnPrem/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/OnPrem/) — in-cluster MongoDB + ReaperC2.
+- [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) — ReaperC2 on existing EKS + **DocumentDB** + Traefik (`kubectl apply -k deployments/k8s/AWS`); no in-cluster MongoDB or Terraform in this repo.
 
 Always review and replace **placeholders** (registry pull secrets, Mongo credentials, storage class, hostnames, TLS issuers) before applying to a real cluster.
 
@@ -42,13 +43,15 @@ kubectl apply -f deployments/k8s/full-deployment.yaml
 
 Traefik **IngressRoute** in the sample routes **beacon** traffic. If you use another ingress controller, adapt routes and TLS the same way: **only** the beacon service port should be on the public edge unless you deliberately expose the admin UI.
 
-## MongoDB in-cluster
+## MongoDB vs DocumentDB
 
-The sample includes a MongoDB Deployment and PVC. For managed Mongo (DocumentDB, Atlas, etc.), remove the in-cluster Mongo pieces and set `MONGO_HOST` / credentials via Secrets to your provider’s connection string pattern. The [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) tree has DocumentDB-oriented notes.
+- **Root / OnPrem** [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) includes an in-cluster MongoDB Deployment and PVC.
+- **AWS** uses **Amazon DocumentDB** only: apply [`deployments/k8s/AWS/examples/documentdb-secret.yaml`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/examples/documentdb-secret.yaml), fetch the RDS CA bundle (`fetch-docdb-ca-bundle.sh`), then `kubectl apply -k deployments/k8s/AWS`. With `DEPLOY_ENV=AWS`, the app adds DocumentDB TLS query parameters automatically ([`pkg/dbconnections/mongoconnections.go`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/pkg/dbconnections/mongoconnections.go)).
 
 ## Seeding the database
 
-From a pod or job that can reach MongoDB, run the repo’s [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) with `MONGO_HOST` set to the cluster DNS name of the Mongo Service (see root README “Kubernetes” example).
+- **OnPrem / in-cluster Mongo**: [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) with `MONGO_HOST` set to the Mongo Service DNS name.
+- **AWS DocumentDB**: use `docdb-mongosh.yaml` or any host that can reach the cluster endpoint with the RDS CA bundle (`fetch-docdb-ca-bundle.sh`); adapt [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) for TLS as needed.
 
 ## Operator AI (multi-model)
 
@@ -72,7 +75,7 @@ The same env vars as Docker Compose / `.env.example` apply in Kubernetes. Sample
 | Source | Variables |
 |--------|-----------|
 | ConfigMap `reaperc2-ai-config` | `REAPER_AI_ENABLED`, `REAPER_AI_DEFAULT_MODEL`, `REAPER_AI_*_MODELS`, `REAPER_AI_MODELS`, `REAPER_AI_MAX_TOKENS` |
-| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY` |
+| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, optional `REAPER_AI_BEDROCK_*` keys (or Bedrock via IRSA — see operator guide) |
 
 **Ollama in K8s** is optional. Most deployments use cloud APIs only. If you run Ollama as its own Deployment/Service, set `REAPER_AI_OLLAMA_ENABLED=1` and `REAPER_AI_OLLAMA_API_URL` to the in-cluster URL (for example `http://ollama.ollama-ns.svc.cluster.local:11434/v1`) in the ConfigMap — not `host.docker.internal`.
 

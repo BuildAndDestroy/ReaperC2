@@ -36,8 +36,10 @@ Set **`SCYTHE_GIT_REF`** (e.g. in `.env` or the shell) to change the branch/tag 
 
 - Admin UI: `http://127.0.0.1:8443/login` — first operator comes from `ADMIN_BOOTSTRAP_*` in `.env` when the `operators` collection is empty.
 - MongoDB is also published on **27017** for local tools (override with `MONGO_HOST_PORT` in `.env`).
-- The app connects with the Mongo **root** user and `MONGO_AUTH_SOURCE=admin` (see [`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)); change `MONGO_USERNAME` / `MONGO_PASSWORD` / `MONGO_AUTH_SOURCE` if you switch to an application user.
+- The app connects with the Mongo **root** user and `MONGO_AUTH_SOURCE=admin` (see [`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)); change `MONGO_USERNAME` / `MONGO_PASSWORD` / `MONGO_AUTH_SOURCE` if you switch to an application user. Passwords with `?`, `@`, and other URI characters are supported (credentials are URL-encoded when building the connection string).
+- If Mongo auth fails after you change `MONGO_ROOT_PASSWORD` in `.env`, the `mongo_data` volume was probably initialized with an older password — run `docker compose down -v` once (wipes local DB data), then `docker compose up --build` again.
 - **Scythe embedded binary:** the image is based on **`golang`** (includes `go` at runtime). `docker-compose.yml` sets `REAPERC2_ROOT=/root` so Scythe sources under `third_party/Scythe` resolve inside the container. After generating a beacon, use **Download Scythe.embedded** on the Beacons page to test the full flow.
+- **Operator AI (Ollama on the host):** run Ollama on your machine (`ollama serve` or the desktop app), then in `.env` set `REAPER_AI_OLLAMA_ENABLED=1`, `REAPER_AI_OLLAMA_API_URL=http://host.docker.internal:11434/v1`, and list models you have pulled (`ollama list`, e.g. `REAPER_AI_OLLAMA_MODELS=gpt-oss:latest`). On **Mac/Windows Docker Desktop**, use `host.docker.internal` only — do **not** add `extra_hosts: host.docker.internal:host-gateway` (it breaks Ollama with `EOF`). On **Linux**, optional `COMPOSE_PROFILES=ollama-host` uses socat on the docker bridge; set `REAPER_AI_OLLAMA_API_URL=http://172.17.0.1:11434/v1` instead. See [Operator AI](docs/operator-guide-ai.md) and [Docker Compose](docs/docker-compose.md).
 
 All helper scripts and the `mongoclient` image live under [`test/`](test/).
 
@@ -160,16 +162,127 @@ With a pivot (parent beacon), the example adds `--proxy <host:port>` (from the f
 
 * If there is no authenticated user, then no access.
 
-## Example - Kubernetes
+## Building the container image
 
-Build the same image locally or in CI (network required if the build must **clone** Scythe because the submodule was not checked out):
+### Makefile — AWS ECR (amd64 + arm64)
+
+The root [`Makefile`](Makefile) builds a **multi-arch** image (`linux/amd64` and `linux/arm64`) with Docker **buildx** and pushes to **Amazon ECR**. Use this for EKS on x86 or Graviton nodes.
+
+**Prerequisites**
+
+- [Docker](https://docs.docker.com/get-docker/) with the **buildx** plugin
+- [AWS CLI](https://aws.amazon.com/cli/) configured (`aws sts get-caller-identity` works)
+- IAM permission to push to ECR (and create the repository if it does not exist)
+- [Git](https://git-scm.com/) (submodule init + default image tag from commit SHA)
+
+**Quick start**
+
+```bash
+# From the repo root — auth via env keys (AWS_PROFILE is ignored when these are set):
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+# export AWS_SESSION_TOKEN=...   # if using temporary creds
+
+make build
+```
+
+Or a named profile: `make build AWS_CLI_PROFILE=your-sso-profile` (do not set `AWS_PROFILE` to the 12-digit account id; use `AWS_ACCOUNT_ID` in the Makefile for that).
+
+That runs `git submodule update --init --recursive`, logs in to ECR, builds **amd64 and arm64 separately** (then merges into one manifest), and pushes:
+
+`123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:<git-short-sha>`
+
+On Apple Silicon, `go mod download` inside Docker buildx often crashes (Go SIGSEGV under QEMU). **`make build`** cross-compiles on your Mac (`make vendor` + `make build-binaries`), then Docker only packages the image (`Dockerfile.pack`). Use **`make build-docker`** on native Linux CI after **`make vendor`** (full compile inside Docker with vendored modules).
+
+**Release tag**
+
+```bash
+make build IMAGE_TAG=v1.0.0
+```
+
+**Other accounts or regions**
+
+```bash
+make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reaperc2
+```
+
+**Makefile targets**
+
+| Target | Description |
+|--------|-------------|
+| `make help` | List targets and current `IMAGE` |
+| `make build` | Host cross-compile + multi-arch ECR push (recommended on Mac) |
+| `make build-docker` | Full Docker build with vendored modules (Linux CI) |
+| `make build-binaries` | Only `bin/linux-amd64` and `bin/linux-arm64/ReaperC2` |
+| `make vendor` | `go mod vendor` (required before `build-docker`) |
+| `make push` | Same as `make build` |
+| `make build-amd64` | Push only `...:$(IMAGE_TAG)-amd64` |
+| `make build-arm64` | Push only `...:$(IMAGE_TAG)-arm64` |
+| `make build-local` | Build `reaperc2:local` for your machine (`--load`, no ECR) |
+| `make ecr-login` | ECR docker login only |
+| `make ecr-create-repo` | Create the ECR repository if missing |
+
+**Variables** (override on the command line or in the environment)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AWS_ACCOUNT_ID` | `123456789012` | ECR registry account (override with your account) |
+| `AWS_REGION` | `us-east-1` | ECR region |
+| `ECR_REPOSITORY` | `reaperc2` | Repository name |
+| `IMAGE_TAG` | `git rev-parse --short HEAD` | Image tag (`latest` if not in a git repo) |
+| `SCYTHE_GIT_REF` | `main` | Branch/tag when the Dockerfile must clone Scythe (submodule preferred) |
+| `AWS_CLI_PROFILE` | (unset) | Optional `aws --profile` for ECR login; env `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` take precedence |
+
+**Deploy to EKS after push**
+
+1. Set the image in [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
+2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md) (DocumentDB secret, CA bundle, `kubectl apply -k deployments/k8s/AWS`).
+3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
+
+### Docker build (single arch, any registry)
+
+For local tags or a registry other than ECR:
 
 ```bash
 git submodule update --init --recursive   # recommended: embed exact Scythe commit from this repo
 docker build -t reaperc2:latest .
 ```
 
-Or rely on the Dockerfile clone: `docker build -t reaperc2:latest .` (uses `SCYTHE_GIT_REF`, default `main`). Push to your registry, then point **`deployments/k8s/**`** manifests at that tag. CI should either run **`git submodule update --init --recursive`** before **`docker build`**, or set **`--build-arg SCYTHE_GIT_REF=…`** to match the Scythe revision you intend to ship.
+The Dockerfile uses `TARGETARCH` (default `amd64`). For arm64 on a single platform: `docker build --build-arg TARGETARCH=arm64 -t reaperc2:arm64 .`
+
+If `third_party/Scythe` is missing, the image build **clones** Scythe using `SCYTHE_GIT_REF` (default `main`):
+
+```bash
+docker build --build-arg SCYTHE_GIT_REF=your-tag -t reaperc2:latest .
+```
+
+Push to your registry, then point **`deployments/k8s/**`** manifests at that tag.
+
+### `DEPLOY_ENV` (runtime, not compile time)
+
+`DEPLOY_ENV` tells ReaperC2 **where it is running** so it can adjust behavior—today mainly the MongoDB/DocumentDB connection string ([`pkg/dbconnections/mongoconnections.go`](pkg/dbconnections/mongoconnections.go)):
+
+| Value | Effect |
+|-------|--------|
+| `AWS` | Adds DocumentDB TLS URI params (`tls`, `replicaSet=rs0`, CA file path, etc.) |
+| `ONPREM` | Standard Mongo URI; optional `MONGO_USE_TLS=true` |
+| `AZURE` / `GCP` | Placeholders in [`cmd/main.go`](cmd/main.go) (“coming soon”) |
+
+Valid values: `AWS`, `AZURE`, `GCP`, `ONPREM` ([`pkg/deploymehere/deploymehere.go`](pkg/deploymehere/deploymehere.go)). Invalid or unset → treated as `ONPREM`.
+
+The Dockerfile default is `ONPREM` for local Compose. **You do not need to bake `AWS` into the ECR image** for EKS: [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) already sets `DEPLOY_ENV=AWS`, which overrides the image default at pod start.
+
+To change the image default at build time (optional):
+
+```bash
+docker build --build-arg DEPLOY_ENV=AWS -t reaperc2:aws .
+# or
+docker buildx build --build-arg DEPLOY_ENV=AWS ...
+```
+
+Prefer **runtime** config (Kubernetes `env`, Compose `environment`) so one image tag works everywhere and you can change behavior without rebuilding.
+
+## Example - Kubernetes
 
 ### Kubernetes: public beacon, admin on localhost (tunnel)
 
@@ -210,41 +323,30 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 ### Requirements
 
-* Kubernetes Cluster
-* Traefik routing - Update routing from deployments/k8s/full-deployment.yaml if you are using something else
-* A domain for your http(s) requests (for **beacon** traffic to **8080**; admin **8443** should stay off public routes—use the tunnel pattern above)
+* Kubernetes cluster (e.g. EKS) with `kubectl` configured
+* Container image in a registry (for AWS: `make build` → ECR; see [Building the container image](#building-the-container-image))
+* Traefik (or another ingress) for **beacon** traffic on **8080**
+* A public hostname for implants (`BEACON_PUBLIC_BASE_URL`); keep admin **8443** off public ingress—use [port-forward](#kubernetes-public-beacon-admin-on-localhost-tunnel) instead
 
-### Yaml Updates
+### Manifest layout
 
-* Keep **Ingress / IngressRoute** pointed only at the **beacon** Service port **8080**. Do not add a public path or listener for **8443** unless you intentionally expose the admin panel (not recommended).
-* Add your subdomain to the full-deployment.yaml
-* Add your docker registry secret to full-deployment.yaml
-* Add your secrets that match your golang binary to allow the connections to mongodb to work
-* Apply the yaml:
+| Path | Use when |
+|------|----------|
+| [`deployments/k8s/AWS/`](deployments/k8s/AWS/) | EKS + **DocumentDB** + ECR (`kubectl apply -k deployments/k8s/AWS`) |
+| [`deployments/k8s/OnPrem/`](deployments/k8s/OnPrem/) | In-cluster MongoDB |
+| [`deployments/k8s/full-deployment.yaml`](deployments/k8s/full-deployment.yaml) | Sample all-in-one with in-cluster Mongo |
 
-```
-$ kubectl apply -f full-deployment.yaml 
-namespace/reaperc2-ns created
-secret/reaperc2-myregistrykey created
-secret/reaperc2-mongodb-secrets created
-service/mongodb-service created
-persistentvolume/mongo-pv created
-persistentvolumeclaim/mongo-pvc created
-deployment.apps/mongodb-deployment created
-deployment.apps/reaperc2-deployment created
-service/reaperc2-service created
-ingress.networking.k8s.io/reaperc2-ingress created
-ingressroute.traefik.io/reaperc2-ingressroute created
+**AWS deploy (summary)**
+
+```bash
+make build   # or: make build IMAGE_TAG=v1.0.0
+# Pin the pushed tag in deployments/k8s/AWS/deployment.yaml (default in repo: git short SHA)
+kubectl apply -k deployments/k8s/AWS
 ```
 
-* Assuming all works, delete the deployment
-* On line 191, change the following in your full-deployment.yaml for a signed cert
+* Point **Ingress / IngressRoute** only at Service port **8080** (beacon).
+* Set your subdomain and TLS issuer in `ingress.yaml` / `ingressroute.yaml` (staging vs prod cert-manager issuer).
+* DocumentDB credentials and ECR pull secret: `deployments/k8s/AWS/examples/`.
+* **Operator AI on EKS:** in-cluster **Ollama** (`gpt-oss:latest`) via `ollama.yaml` + `ai-config.yaml`; optional **AWS Bedrock** via `reaperc2-ai-secrets` (see AWS README and [Operator AI](docs/operator-guide-ai.md)).
 
-```
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    # cert-manager.io/cluster-issuer: letsencrypt-staging
-```
-
-* Note: We leave staging set to true to avoid timing out your domain due to accidents
-
-* Your C2 is now running
+More detail: [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md) and [`docs/kubernetes.md`](docs/kubernetes.md).

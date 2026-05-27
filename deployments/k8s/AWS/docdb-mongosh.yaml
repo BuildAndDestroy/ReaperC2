@@ -1,17 +1,23 @@
+# Optional debug pod for DocumentDB: mount CA bundle, then run mongosh from inside the cluster.
+# Requires docdb-ca-cert ConfigMap (apply kustomize first) and documentdb credentials secret.
 apiVersion: v1
 kind: Pod
 metadata:
   name: docdb-tester
+  namespace: reaperc2-ns
+  labels:
+    app: docdb-tester
 spec:
   containers:
-  - name: mongo-client
-    image: mongo:7.0
-    command: ["sleep", "3600"]
-    volumeMounts:
-    - name: ca-cert
-      mountPath: /certs
+    - name: mongo-client
+      image: mongo:7.0
+      command: ["sleep", "3600"]
+      volumeMounts:
+        - name: ca-cert
+          mountPath: /certs
+          readOnly: true
   restartPolicy: Never
   volumes:
-  - name: ca-cert
-    configMap:
-      name: docdb-ca-cert
+    - name: ca-cert
+      configMap:
+        name: docdb-ca-cert

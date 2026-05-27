@@ -12,6 +12,9 @@ const (
 	ProviderOpenAI    = "openai"
 	ProviderAnthropic = "anthropic"
 	ProviderOllama    = "ollama"
+	ProviderBedrock   = "bedrock"
+	// ProviderFoundry is Azure AI Foundry / Azure OpenAI (OpenAI-compatible v1 API).
+	ProviderFoundry = "foundry"
 )
 
 // ProviderSettings is one configured LLM backend.
@@ -46,7 +49,7 @@ func Catalog() []ProviderInfo {
 			Configured:  p.Configured,
 			Model:       p.Model,
 			APIURL:      p.APIURL,
-			RequiresKey: p.ID == ProviderOpenAI || p.ID == ProviderAnthropic,
+			RequiresKey: p.ID == ProviderOpenAI || p.ID == ProviderAnthropic || p.ID == ProviderBedrock || p.ID == ProviderFoundry,
 		})
 	}
 	return out
@@ -105,7 +108,9 @@ func loadAllProviders() []ProviderSettings {
 	return []ProviderSettings{
 		openAISettings(maxTok),
 		anthropicSettings(maxTok),
+		foundrySettings(maxTok),
 		ollamaSettings(maxTok),
+		bedrockSettings(maxTok),
 	}
 }
 
@@ -126,7 +131,7 @@ func openAISettings(maxTok int) ProviderSettings {
 		model = strings.TrimSpace(os.Getenv("REAPER_AI_MODEL"))
 	}
 	if model == "" {
-		model = "gpt-4o-mini"
+		model = "gpt-5.5"
 	}
 	return ProviderSettings{
 		ID:         ProviderOpenAI,
@@ -147,7 +152,7 @@ func anthropicSettings(maxTok int) ProviderSettings {
 	}
 	model := strings.TrimSpace(os.Getenv("REAPER_AI_ANTHROPIC_MODEL"))
 	if model == "" {
-		model = "claude-sonnet-4-20250514"
+		model = "claude-opus-4-7"
 	}
 	return ProviderSettings{
 		ID:         ProviderAnthropic,
@@ -157,6 +162,49 @@ func anthropicSettings(maxTok int) ProviderSettings {
 		Model:      model,
 		MaxTokens:  maxTok,
 		Configured: key != "" && aiEnabled(),
+	}
+}
+
+func foundrySettings(maxTok int) ProviderSettings {
+	key := foundryAPIKeyFromEnv()
+	url := foundryAPIURLFromEnv()
+	model := strings.TrimSpace(os.Getenv("REAPER_AI_FOUNDRY_MODEL"))
+	if model == "" {
+		model = "gpt-5.5"
+	}
+	configured := key != "" && url != "" && aiEnabled()
+	return ProviderSettings{
+		ID:         ProviderFoundry,
+		Label:      "Azure AI Foundry",
+		APIURL:     url,
+		APIKey:     key,
+		Model:      model,
+		MaxTokens:  maxTok,
+		Configured: configured,
+	}
+}
+
+func bedrockSettings(maxTok int) ProviderSettings {
+	region := bedrockRegionFromEnv()
+	model := strings.TrimSpace(os.Getenv("REAPER_AI_BEDROCK_MODEL"))
+	if model == "" {
+		model = bedrockConverseModelID("anthropic.claude-opus-4-7")
+	} else {
+		model = bedrockConverseModelID(model)
+	}
+	explicit := strings.TrimSpace(os.Getenv("REAPER_AI_BEDROCK_ENABLED")) == "1"
+	hasModels := strings.TrimSpace(os.Getenv("REAPER_AI_BEDROCK_MODELS")) != ""
+	hasModel := strings.TrimSpace(os.Getenv("REAPER_AI_BEDROCK_MODEL")) != ""
+	canAuth := bedrockCanAuthenticate()
+	configured := aiEnabled() && region != "" && canAuth && (explicit || hasModels || hasModel || bedrockHasAPIKey() || bedrockHasIAMAccessKeys())
+	return ProviderSettings{
+		ID:         ProviderBedrock,
+		Label:      "AWS Bedrock",
+		APIURL:     region, // Bedrock uses region, not an HTTP base URL.
+		APIKey:     "",
+		Model:      model,
+		MaxTokens:  maxTok,
+		Configured: configured,
 	}
 }
 
@@ -206,6 +254,10 @@ func normalizeProviderID(s string) string {
 		return ProviderAnthropic
 	case ProviderOllama, "local":
 		return ProviderOllama
+	case ProviderBedrock, "aws", "amazon":
+		return ProviderBedrock
+	case ProviderFoundry, "azure", "azure_foundry", "azure-openai", "microsoft_foundry", "foundry_models":
+		return ProviderFoundry
 	default:
 		return strings.ToLower(strings.TrimSpace(s))
 	}
