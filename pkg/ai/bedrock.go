@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -45,7 +46,7 @@ func chatBedrock(ctx context.Context, cfg ProviderSettings, system string, messa
 		ModelId:  aws.String(modelID),
 		Messages: brMessages,
 		InferenceConfig: &types.InferenceConfiguration{
-			MaxTokens: aws.Int32(int32(cfg.MaxTokens)),
+			MaxTokens: aws.Int32(bedrockMaxTokensInt32(cfg.MaxTokens)),
 		},
 	}
 	if system != "" {
@@ -75,6 +76,17 @@ func chatBedrock(ctx context.Context, cfg ProviderSettings, system string, messa
 		return "", fmt.Errorf("AWS Bedrock: empty message content")
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n")), nil
+}
+
+// bedrockMaxTokensInt32 maps configured max tokens to int32 without overflow (G115).
+func bedrockMaxTokensInt32(maxTokens int) int32 {
+	if maxTokens <= 0 {
+		return 1
+	}
+	if maxTokens > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(maxTokens)
 }
 
 func loadBedrockAWSConfig(ctx context.Context, region string) (aws.Config, error) {
