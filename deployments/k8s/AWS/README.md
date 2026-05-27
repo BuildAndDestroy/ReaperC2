@@ -33,12 +33,14 @@ From the **repo root**, after [`make build`](#build-and-push):
 cd deployments/k8s/AWS
 cp examples/documentdb-secret.yaml examples/documentdb-secret.local.yaml
 cp examples/documentdb-admin-secret.yaml examples/documentdb-admin-secret.local.yaml
+cp examples/admin-bootstrap-secret.yaml examples/admin-bootstrap-secret.local.yaml
 ```
 
 Edit:
 
 - `examples/documentdb-secret.local.yaml` — host, `username`, `password`, `database`, **`auth_source` (same as `database`)**
 - `examples/documentdb-admin-secret.local.yaml` — DocumentDB **master** user (init Job only)
+- `examples/admin-bootstrap-secret.local.yaml` — first **admin UI** login (only when `operators` collection is empty)
 - `deployment.yaml` — ECR `image:` tag you pushed
 - `ingress.yaml` / `ingressroute.yaml` — beacon hostname
 
@@ -54,6 +56,7 @@ chmod +x fetch-docdb-ca-bundle.sh && ./fetch-docdb-ca-bundle.sh
 kubectl apply -f namespace.yaml
 kubectl apply -f examples/documentdb-secret.local.yaml
 kubectl apply -f examples/documentdb-admin-secret.local.yaml
+kubectl apply -f examples/admin-bootstrap-secret.local.yaml
 
 # ECR pull (replace ACCOUNT / region)
 kubectl create secret docker-registry reaperc2-myregistrykey \
@@ -158,8 +161,9 @@ Then set `deployment.yaml` `image:` to the tag you pushed (e.g. `123456789012.dk
 | ECR image URI | `deployment.yaml` → `spec.template.spec.containers[0].image` |
 | Beacon hostname / TLS | `ingress.yaml`, `ingressroute.yaml` → `subdomain.domain.com` |
 | DocumentDB host, user, password | `examples/documentdb-secret.local.yaml` (from template; not committed) |
+| Admin UI first login | `examples/admin-bootstrap-secret.local.yaml` → Secret `reaperc2-admin-bootstrap` |
 | ECR pull secret | `examples/registry-secret.yaml` (commands only) |
-| Operator AI (Bedrock, etc.) | `ai-config.yaml` + Secret `reaperc2-ai-secrets` |
+| Operator AI (Bedrock, etc.) | `ai-config.yaml` + IRSA on ServiceAccount `reaperc2` (or `reaperc2-ai-secrets`) |
 
 ## Deploy (details)
 
@@ -172,7 +176,9 @@ Use the [checklist](#run-from-scratch-checklist) order. Notes:
 
 `kubectl apply -k .` applies ReaperC2, ingress, `reaperc2-ai-config` (Bedrock by default), and DocumentDB init scripts.
 
-**Operator AI:** edit `ai-config.yaml` (region, model IDs), then create `reaperc2-ai-secrets` with API keys or use Bedrock IAM/IRSA. Do **not** apply the root [`operator-ai.yaml`](../operator-ai.yaml) ConfigMap — it would overwrite this bundle’s `ai-config.yaml`.
+**Operator AI:** edit `ai-config.yaml` (region, model IDs), then configure Bedrock via **IRSA** ([`examples/bedrock-irsa.md`](examples/bedrock-irsa.md)) or `reaperc2-ai-secrets` API keys. Do **not** apply the root [`operator-ai.yaml`](../operator-ai.yaml) ConfigMap — it would overwrite this bundle’s `ai-config.yaml`.
+
+**Admin UI login** is **not** DocumentDB. On first boot (empty `operators` collection), use `username` / `password` from `reaperc2-admin-bootstrap`. Change the password after login or create operators in MongoDB and remove the bootstrap secret.
 
 ```bash
 kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
@@ -220,6 +226,10 @@ REAPER_AI_BEDROCK_USE_IAM: "1"
 ```
 
 Remove Bedrock keys from `reaperc2-ai-secrets`, `kubectl apply -k .`, and restart once. The AWS SDK uses the pod role; EKS refreshes the web identity token automatically.
+
+Step-by-step IRSA setup: [`examples/bedrock-irsa.md`](examples/bedrock-irsa.md). Example IAM policy: [`examples/bedrock-iam-policy.json`](examples/bedrock-iam-policy.json).
+
+**Troubleshooting — `AccessDeniedException` on `bedrock:InvokeModel` with the EKS *node group* role in the error:** the pod is using the **node instance profile**, not IRSA. Fix: create the Bedrock policy + `eksctl create iamserviceaccount` (or annotate `serviceaccount.yaml` with `eks.amazonaws.com/role-arn`), ensure `REAPER_AI_BEDROCK_USE_IAM=1`, rollout restart, and confirm `AWS_ROLE_ARN` is set in the pod. Alternatively, put a Bedrock API key in `reaperc2-ai-secrets` (see [`operator-ai.yaml`](../operator-ai.yaml)).
 
 If you previously deployed in-cluster Ollama, remove leftovers:
 

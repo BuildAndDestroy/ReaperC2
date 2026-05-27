@@ -5,6 +5,7 @@ namespace: reaperc2-ns
 
 resources:
   - namespace.yaml
+  - serviceaccount.yaml
   - ai-config.yaml
   - deployment.yaml
   - service.yaml
