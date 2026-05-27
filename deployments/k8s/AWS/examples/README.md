@@ -5,7 +5,8 @@ Files here use **placeholders only**. Copy to `*.local.yaml`, edit, apply the **
 ```bash
 cp documentdb-secret.yaml documentdb-secret.local.yaml
 cp documentdb-admin-secret.yaml documentdb-admin-secret.local.yaml
-# Edit both .local files, then apply (see ../README.md).
+cp admin-bootstrap-secret.yaml admin-bootstrap-secret.local.yaml
+# Edit all .local files, then apply (see ../README.md).
 ```
 
 `*.local.yaml` is gitignored — never commit real hostnames or passwords.
@@ -21,5 +22,18 @@ cp documentdb-admin-secret.yaml documentdb-admin-secret.local.yaml
 **Common mistake:** `database: reaperc2_db` with `auth_source: api_db` → authentication fails.
 
 After you change the password in `.local.yaml`, re-run **`docdb-init-user-job`** (it updates the password if the user already exists). See [../README.md#sync-documentdb-password](../README.md#sync-documentdb-password).
+
+## `admin-bootstrap-secret.local.yaml`
+
+| Key | Rule |
+|-----|------|
+| `username` | First admin UI login when no operators exist in MongoDB |
+| `password` | Stored as Argon2id on first startup only |
+
+Not used for DocumentDB. After the first operator exists, bootstrap env vars are ignored on later restarts (you can delete the secret).
+
+## Bedrock (Operator AI)
+
+See [bedrock-irsa.md](bedrock-irsa.md) and [bedrock-iam-policy.json](bedrock-iam-policy.json). Do not grant Bedrock on the EKS node group role unless you accept cluster-wide exposure.
 
 For ECR pull credentials, use the commands in `registry-secret.yaml` (no Secret manifest in git).
