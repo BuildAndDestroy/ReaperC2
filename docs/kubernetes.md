@@ -4,7 +4,7 @@ Example and environment-specific manifests live under [`deployments/k8s/`](https
 
 - [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) — namespace, MongoDB, ReaperC2, Traefik **IngressRoute**, beacon-facing service (sample placeholders for secrets and NFS).
 - [`OnPrem/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/OnPrem/) — in-cluster MongoDB + ReaperC2.
-- [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) — ReaperC2 on existing EKS + **DocumentDB** + Traefik (`kubectl apply -k deployments/k8s/AWS`); no in-cluster MongoDB or Terraform in this repo.
+- [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) — ReaperC2 on existing EKS + **DocumentDB** + ECR; use [`deploy-aws-k8s.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/AWS/deploy-aws-k8s.sh) or `kubectl apply -k deployments/k8s/AWS` for the **core** stack, then apply ingress when Traefik/cert-manager are ready (see AWS README).
 
 Always review and replace **placeholders** (registry pull secrets, Mongo credentials, storage class, hostnames, TLS issuers) before applying to a real cluster.
 
@@ -46,7 +46,7 @@ Traefik **IngressRoute** in the sample routes **beacon** traffic. If you use ano
 ## MongoDB vs DocumentDB
 
 - **Root / OnPrem** [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) includes an in-cluster MongoDB Deployment and PVC.
-- **AWS** uses **Amazon DocumentDB** only: apply [`deployments/k8s/AWS/examples/documentdb-secret.yaml`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/examples/documentdb-secret.yaml), fetch the RDS CA bundle (`fetch-docdb-ca-bundle.sh`), then `kubectl apply -k deployments/k8s/AWS`. With `DEPLOY_ENV=AWS`, the app adds DocumentDB TLS query parameters automatically ([`pkg/dbconnections/mongoconnections.go`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/pkg/dbconnections/mongoconnections.go)).
+- **AWS** uses **Amazon DocumentDB** only: copy and edit [`deployments/k8s/AWS/examples/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/examples/) templates to `*.local.yaml`, fetch the RDS CA bundle (`fetch-docdb-ca-bundle.sh`), then `kubectl apply -k deployments/k8s/AWS` (core app only) and **`./deploy-aws-k8s.sh apply-ingress`** (or manual `ingress.yaml` / `ingressroute.yaml`) when Traefik is installed. With `DEPLOY_ENV=AWS`, the app adds DocumentDB TLS query parameters automatically ([`pkg/dbconnections/mongoconnections.go`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/pkg/dbconnections/mongoconnections.go)).
 
 ## Seeding the database
 
@@ -62,31 +62,31 @@ The same env vars as Docker Compose / `.env.example` apply in Kubernetes. Sample
 
 **Enable Operator AI:**
 
-1. Edit `operator-ai.yaml`: set `REAPER_AI_OPENAI_MODELS` / `REAPER_AI_ANTHROPIC_MODELS` (comma-separated) and API keys in the Secret.
-2. Apply:
+1. Copy the template (gitignored local file):
 
    ```bash
-   kubectl apply -f deployments/k8s/operator-ai.yaml
+   cp deployments/k8s/operator-ai.yaml deployments/k8s/operator-ai.local.yaml
+   ```
+
+2. Edit `operator-ai.local.yaml`: ConfigMap (providers, model/deployment names, Bedrock region) and Secret (API keys). Same variables as `.env.example`. For **Azure Foundry**, use your resource URL (`https://YOUR_RESOURCE.openai.azure.com`) and **deployment names** from `az cognitiveservices account deployment list` — not catalog names like `gpt-5.5` unless that is the deployment name.
+
+3. Apply the **local** file (not the template):
+
+   ```bash
+   kubectl apply -f deployments/k8s/operator-ai.local.yaml
    kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
    ```
 
-3. Port-forward admin (`8443`) and open **Operator AI** — choose **Auto** or a specific model from the dropdown.
+4. Port-forward admin (`8443`) and open **Operator AI** — choose **Auto** or a specific model from the dropdown.
 
 | Source | Variables |
 |--------|-----------|
-| ConfigMap `reaperc2-ai-config` | `REAPER_AI_ENABLED`, `REAPER_AI_DEFAULT_MODEL`, `REAPER_AI_*_MODELS`, `REAPER_AI_MODELS`, `REAPER_AI_MAX_TOKENS` |
-| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, optional `REAPER_AI_BEDROCK_*` keys (or Bedrock via IRSA — see operator guide) |
+| ConfigMap `reaperc2-ai-config` | `REAPER_AI_ENABLED`, `REAPER_AI_DEFAULT_*`, `REAPER_AI_*_MODELS`, `REAPER_AI_FOUNDRY_*`, `REAPER_AI_BEDROCK_*`, `REAPER_AI_OLLAMA_*` |
+| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, `REAPER_AI_FOUNDRY_API_KEY`, `REAPER_AI_BEDROCK_*` keys (or Bedrock via IRSA — see operator guide) |
+
+**AWS EKS:** `kubectl apply -k deployments/k8s/AWS` applies the core Deployment/Service and DocumentDB ConfigMaps only — **not** Operator AI or Ingress. Use `operator-ai.local.yaml` and [`deploy-aws-k8s.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/AWS/deploy-aws-k8s.sh) (or the manual steps in [`deployments/k8s/AWS/README.md`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/AWS/README.md)).
 
 **Ollama in K8s** is optional. Most deployments use cloud APIs only. If you run Ollama as its own Deployment/Service, set `REAPER_AI_OLLAMA_ENABLED=1` and `REAPER_AI_OLLAMA_API_URL` to the in-cluster URL (for example `http://ollama.ollama-ns.svc.cluster.local:11434/v1`) in the ConfigMap — not `host.docker.internal`.
-
-To patch keys without storing them in git:
-
-```bash
-kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
-  --from-literal=REAPER_AI_OPENAI_API_KEY=sk-... \
-  --from-literal=REAPER_AI_ANTHROPIC_API_KEY=sk-ant-... \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
 
 See [Operator AI](/documentation/operator-guide-ai) for variable details.
 

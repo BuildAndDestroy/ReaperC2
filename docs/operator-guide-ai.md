@@ -70,7 +70,7 @@ Legacy: `REAPER_AI_API_KEY`, `REAPER_AI_API_URL`, `REAPER_AI_MODEL`.
 
 ### Azure AI Foundry
 
-Uses the [OpenAI v1-compatible endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/endpoints) on your Foundry / Azure OpenAI resource (`/openai/v1/chat/completions` and `/openai/v1/models`). On Azure, the model field is often your **deployment name** (from discovery or `REAPER_AI_FOUNDRY_MODELS`).
+Uses the [OpenAI v1-compatible endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/endpoints) on your Foundry / Azure OpenAI resource (`/openai/v1/chat/completions` and `/openai/v1/models`). On Azure, the model field is often your **deployment name** (from discovery or `REAPER_AI_FOUNDRY_MODELS`). Requests use **`max_completion_tokens`** (not `max_tokens`) for this provider so **GPT-5.x** and similar deployments work, and **`temperature` is set to `1`** (Azure rejects other values for some SKUs). Deployments that do not support **chat completions** on this path (e.g. some Claude SKUs) return `api_not_supported` — use **Anthropic** or **AWS Bedrock** in ReaperC2 for those models instead.
 
 | Variable | Purpose |
 |----------|---------|

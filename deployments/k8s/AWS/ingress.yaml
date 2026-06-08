@@ -4,8 +4,8 @@ metadata:
   name: reaperc2-ingress
   annotations:
     acme.cert-manager.io/http01-edit-in-place: "true"
-    cert-manager.io/cluster-issuer: letsencrypt-staging
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/frontend-entry-points: http, https
     traefik.ingress.kubernetes.io/redirect-entry-point: https
 spec:

@@ -34,7 +34,7 @@ Operator AI uses the AWS credential chain when Bedrock is enabled and no static 
    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/reaperc2-bedrock
    ```
 
-4. Ensure `reaperc2-ai-config` has `REAPER_AI_BEDROCK_USE_IAM: "1"` (set in `../ai-config.yaml`).
+4. Ensure `reaperc2-ai-config` has `REAPER_AI_BEDROCK_USE_IAM: "1"` (set in `../operator-ai.local.yaml`).
 
 5. Rollout:
 

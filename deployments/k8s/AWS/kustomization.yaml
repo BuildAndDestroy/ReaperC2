@@ -3,14 +3,13 @@ kind: Kustomization
 
 namespace: reaperc2-ns
 
+# Ingress is applied separately: ./deploy-aws-k8s.sh apply-ingress
+# (avoids cert-manager / Traefik / IngressRoute CRD blocking a working app + port-forward admin).
 resources:
   - namespace.yaml
   - serviceaccount.yaml
-  - ai-config.yaml
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
-  - ingressroute.yaml
 
 # Download the RDS trust bundle first: ./fetch-docdb-ca-bundle.sh
 configMapGenerator:

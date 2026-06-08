@@ -1,9 +1,18 @@
-# Optional Operator AI configuration for ReaperC2 (/ai).
-# Apply after editing API keys: kubectl apply -f deployments/k8s/operator-ai.yaml
-# Requires reaperc2 Deployment to reference these via envFrom (included in full-deployment.yaml variants).
+# Operator AI for Kubernetes (ConfigMap + Secret).
+# Mirrors .env.example — one file for model catalog and API keys.
 #
-# AWS EKS: use deployments/k8s/AWS/ai-config.yaml (Bedrock/cloud; no in-cluster Ollama).
-# Ollama: deploy separately if needed and set REAPER_AI_OLLAMA_ENABLED=1 and REAPER_AI_OLLAMA_API_URL.
+# Setup (do not commit secrets):
+#   cp deployments/k8s/operator-ai.yaml deployments/k8s/operator-ai.local.yaml
+#   # Edit operator-ai.local.yaml (keys, URLs, deployment names)
+#   kubectl apply -f deployments/k8s/operator-ai.local.yaml
+#   kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+#
+# AWS EKS: apply operator-ai.local.yaml instead of patching secrets.
+# Do not kubectl apply -f operator-ai.yaml (placeholders only).
+# Safe apply -k for the app stack: deployments/k8s/AWS (no Operator AI ConfigMap in kustomize).
+#
+# Deployment must reference reaperc2-ai-config and reaperc2-ai-secrets via envFrom
+# (see deployments/k8s/AWS/deployment.yaml).
 
 apiVersion: v1
 kind: ConfigMap
@@ -13,22 +22,42 @@ metadata:
 data:
   REAPER_AI_ENABLED: "1"
   REAPER_AI_DEFAULT_MODEL: "auto"
-  REAPER_AI_DEFAULT_PROVIDER: "openai"
+  REAPER_AI_DEFAULT_PROVIDER: "bedrock"
   REAPER_AI_MAX_TOKENS: "2048"
-  # Comma-separated models per provider (shown in UI as "Provider · model").
-  REAPER_AI_OPENAI_MODELS: "gpt-4o-mini,gpt-4o"
-  REAPER_AI_ANTHROPIC_MODELS: "claude-sonnet-4-20250514"
-  # AWS Bedrock (EKS: set REAPER_AI_BEDROCK_USE_IAM=1 and use IRSA; omit keys in Secret)
-  # REAPER_AI_BEDROCK_ENABLED: "1"
-  # REAPER_AI_BEDROCK_REGION: "us-east-1"
-  # REAPER_AI_BEDROCK_USE_IAM: "1"
-  # REAPER_AI_BEDROCK_MODELS: "anthropic.claude-sonnet-4-6"
-  # Or one unified list (overrides per-provider *_MODELS when set):
-  # REAPER_AI_MODELS: "openai:gpt-4o-mini,anthropic:claude-sonnet-4-20250514,bedrock:anthropic.claude-sonnet-4-6"
-  # Ollama (optional — uncomment if you run Ollama in the cluster or reach one over the network):
+
+  # Optional unified catalog (foundry:/bedrock:/openai: prefixes). Discovery still adds live models.
+  # REAPER_AI_MODELS: "bedrock:us.anthropic.claude-opus-4-7,foundry:YOUR_DEPLOYMENT,openai:gpt-4o-mini"
+
+  # --- OpenAI ---
+  # REAPER_AI_OPENAI_API_URL: "https://api.openai.com/v1"
+  # REAPER_AI_OPENAI_DISCOVER: "1"
+  # REAPER_AI_OPENAI_MODELS: "gpt-5.5,gpt-4.1,gpt-4o-mini,gpt-4o"
+
+  # --- Anthropic ---
+  # REAPER_AI_ANTHROPIC_API_URL: "https://api.anthropic.com/v1"
+  # REAPER_AI_ANTHROPIC_DISCOVER: "1"
+  # REAPER_AI_ANTHROPIC_MODELS: "claude-opus-4-7,claude-sonnet-4-6"
+
+  # --- Azure AI Foundry (resource base URL; ReaperC2 appends /openai/v1) ---
+  # Use Azure deployment names in FOUNDRY_MODELS (from: az cognitiveservices account deployment list).
+  REAPER_AI_FOUNDRY_API_URL: "https://YOUR_RESOURCE.openai.azure.com"
+  REAPER_AI_FOUNDRY_DISCOVER: "0"
+  REAPER_AI_FOUNDRY_MODELS: "YOUR_DEPLOYMENT_NAME"
+  REAPER_AI_FOUNDRY_USE_API_KEY_HEADER: "0"
+
+  # --- AWS Bedrock ---
+  REAPER_AI_BEDROCK_ENABLED: "1"
+  REAPER_AI_BEDROCK_REGION: "us-east-1"
+  REAPER_AI_BEDROCK_USE_IAM: "1"
+  # REAPER_AI_BEDROCK_INFERENCE_PREFIX: "us"
+  REAPER_AI_BEDROCK_MODELS: "us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0"
+  # REAPER_AI_BEDROCK_MODEL: "us.anthropic.claude-opus-4-7"
+
+  # --- Ollama (optional in-cluster or host) ---
   # REAPER_AI_OLLAMA_ENABLED: "1"
-  # REAPER_AI_OLLAMA_API_URL: "http://ollama.ollama-ns.svc.cluster.local:11434/v1"
-  # REAPER_AI_OLLAMA_MODELS: "llama3.2"
+  # REAPER_AI_OLLAMA_DISCOVER: "1"
+  # REAPER_AI_OLLAMA_API_URL: "http://host.docker.internal:11434/v1"
+  # REAPER_AI_OLLAMA_MODELS: "llama3.2:latest"
 ---
 apiVersion: v1
 kind: Secret
@@ -37,15 +66,25 @@ metadata:
   namespace: reaperc2-ns
 type: Opaque
 stringData:
-  # Replace empty values before apply, or patch after create:
-  # kubectl create secret generic reaperc2-ai-secrets -n reaperc2-ns \
-  #   --from-literal=REAPER_AI_OPENAI_API_KEY=sk-... \
-  #   --from-literal=REAPER_AI_ANTHROPIC_API_KEY=sk-ant-... \
-  #   --dry-run=client -o yaml | kubectl apply -f -
+  # Fill in operator-ai.local.yaml — leave unused keys as "" or remove them.
+
+  # OpenAI
   REAPER_AI_OPENAI_API_KEY: ""
+
+  # Anthropic
   REAPER_AI_ANTHROPIC_API_KEY: ""
-  # REAPER_AI_BEDROCK_API_KEY: ""
-  # REAPER_AI_BEDROCK_ACCESS_KEY_ID: ""
-  # REAPER_AI_BEDROCK_SECRET_ACCESS_KEY: ""
-  # REAPER_AI_BEDROCK_SESSION_TOKEN: ""
-  # REAPER_AI_OLLAMA_API_KEY: ""
+
+  # Azure AI Foundry (required for Foundry dropdown + chat)
+  REAPER_AI_FOUNDRY_API_KEY: "CHANGE_ME"
+
+  # AWS Bedrock — pick one auth path:
+  # (A) Bedrock API key from AWS console (bearer)
+  REAPER_AI_BEDROCK_API_KEY: ""
+  # (B) Temporary IAM / SSO (12h) — all three required
+  REAPER_AI_BEDROCK_ACCESS_KEY_ID: ""
+  REAPER_AI_BEDROCK_SECRET_ACCESS_KEY: ""
+  REAPER_AI_BEDROCK_SESSION_TOKEN: ""
+  # (C) EKS IRSA — leave keys empty; set REAPER_AI_BEDROCK_USE_IAM=1 in ConfigMap above
+
+  # Ollama (usually no key)
+  REAPER_AI_OLLAMA_API_KEY: ""

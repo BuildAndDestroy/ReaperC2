@@ -236,7 +236,7 @@ make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reape
 **Deploy to EKS after push**
 
 1. Set the image in [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
-2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) (`fetch-docdb-ca-bundle.sh`, DocumentDB secret, init Jobs, `kubectl apply -k deployments/k8s/AWS`).
+2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#quick-install-script): optional [`deploy-aws-k8s.sh`](deployments/k8s/AWS/deploy-aws-k8s.sh) `all`, or manually `fetch-docdb-ca-bundle.sh`, secrets, `kubectl apply -k deployments/k8s/AWS`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready.
 3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
 
 ### Docker build (single arch, any registry)
@@ -332,7 +332,7 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 | Path | Use when |
 |------|----------|
-| [`deployments/k8s/AWS/`](deployments/k8s/AWS/) | EKS + **DocumentDB** + ECR (`kubectl apply -k deployments/k8s/AWS`) |
+| [`deployments/k8s/AWS/`](deployments/k8s/AWS/) | EKS + **DocumentDB** + ECR (`kubectl apply -k deployments/k8s/AWS` for core; [`deploy-aws-k8s.sh`](deployments/k8s/AWS/deploy-aws-k8s.sh) for full flow + ingress) |
 | [`deployments/k8s/OnPrem/`](deployments/k8s/OnPrem/) | In-cluster MongoDB |
 | [`deployments/k8s/full-deployment.yaml`](deployments/k8s/full-deployment.yaml) | Sample all-in-one with in-cluster Mongo |
 
@@ -344,8 +344,9 @@ make build   # or: make build IMAGE_TAG=v1.0.0
 
 cd deployments/k8s/AWS
 ./fetch-docdb-ca-bundle.sh
+# Prefer: ./deploy-aws-k8s.sh all   (then job-docdb-user / job-docdb-init / apply-ingress)
 kubectl apply -f namespace.yaml -f examples/documentdb-secret.yaml
-# ECR pull secret + optional docdb-init-user-job.yaml — see AWS README
+# ECR pull secret + docdb jobs — see AWS README
 kubectl apply -k .
 kubectl apply -f docdb-init-job.yaml
 kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
@@ -354,6 +355,6 @@ kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=12
 * Point **Ingress / IngressRoute** only at Service port **8080** (beacon).
 * Set your subdomain and TLS issuer in `ingress.yaml` / `ingressroute.yaml` (staging vs prod cert-manager issuer).
 * DocumentDB: split secret keys (`host`, `username`, …), not a single URI; run **`fetch-docdb-ca-bundle.sh`** then **`docdb-init-job.yaml`** for collections/indexes.
-* **Operator AI on EKS:** **AWS Bedrock** (and optional OpenAI/Anthropic) via `ai-config.yaml` + `reaperc2-ai-secrets` — see AWS README and [Operator AI](docs/operator-guide-ai.md).
+* **Operator AI on EKS:** copy `deployments/k8s/operator-ai.yaml` → `operator-ai.local.yaml`, apply locally (ConfigMap + secrets) — see AWS README and [Operator AI](docs/operator-guide-ai.md).
 
 Full checklist (read [DocumentDB pitfalls](deployments/k8s/AWS/README.md#documentdb-pitfalls-read-first) first): [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).

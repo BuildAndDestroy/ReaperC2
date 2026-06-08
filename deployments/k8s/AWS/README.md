@@ -23,6 +23,29 @@ These caused most deploy pain — avoid them up front:
 
 ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Operator AI uses Bedrock (see [Bedrock credentials](#bedrock-credentials-rotation)), not in-cluster Ollama.
 
+## Quick install (script)
+
+[`deploy-aws-k8s.sh`](deploy-aws-k8s.sh) runs the same steps as the manual checklist in order: **local prerequisites** (three `examples/*.local.yaml` files, bundled YAML, real ECR image in `deployment.yaml`, executable `fetch-docdb-ca-bundle.sh` — use `./deploy-aws-k8s.sh check-local` to verify), cluster preflight, CA bundle download, secrets (including `../operator-ai.local.yaml` if present), ECR pull secret, **`kubectl apply -k .` (core stack only — no Ingress)**, rollout, then prints commands for DocumentDB Jobs and ingress.
+
+```bash
+cd deployments/k8s/AWS
+chmod +x deploy-aws-k8s.sh fetch-docdb-ca-bundle.sh
+# After copying/editing all three examples/*.local.yaml and deployment image:
+./deploy-aws-k8s.sh check-local
+./deploy-aws-k8s.sh help
+./deploy-aws-k8s.sh all
+./deploy-aws-k8s.sh job-docdb-user
+./deploy-aws-k8s.sh job-docdb-init   # optional
+# When Traefik + Traefik CRDs + (optional) cert-manager are ready:
+./deploy-aws-k8s.sh apply-ingress
+```
+
+`SKIP_ECR_SECRET=1 ./deploy-aws-k8s.sh all` skips the ECR docker-registry secret step if you manage pulls another way. `REAPER_NS` overrides the namespace. To remove the app from the cluster, see [Teardown (app only)](#teardown-app-only) (`./deploy-aws-k8s.sh teardown`).
+
+**Why ingress is separate:** `ingress.yaml` references cert-manager and Traefik; `ingressroute.yaml` needs the Traefik CRD. Applying them with the rest of the stack often blocks or confuses first-time bring-up. Apply ingress only when those dependencies exist ([Ingress troubleshooting](#ingress-traefik-cert-manager)).
+
+**Upgrading from an older clone** where `ingress.yaml` was in `kustomization.yaml`: `kubectl apply -k .` does not delete existing objects. If you want ingress fully managed by the script going forward, delete any old Ingress/IngressRoute once, then use `apply-ingress` for updates.
+
 ## Run from scratch (checklist)
 
 From the **repo root**, after [`make build`](#build-and-push):
@@ -58,6 +81,11 @@ kubectl apply -f examples/documentdb-secret.local.yaml
 kubectl apply -f examples/documentdb-admin-secret.local.yaml
 kubectl apply -f examples/admin-bootstrap-secret.local.yaml
 
+# Operator AI (ConfigMap + API keys — copy template, edit, apply; never commit .local)
+cp ../operator-ai.yaml ../operator-ai.local.yaml
+# Edit ../operator-ai.local.yaml (Foundry URL, deployment name, Bedrock/Foundry keys)
+kubectl apply -f ../operator-ai.local.yaml
+
 # ECR pull (replace ACCOUNT / region)
 kubectl create secret docker-registry reaperc2-myregistrykey \
   --namespace=reaperc2-ns \
@@ -67,10 +95,11 @@ kubectl create secret docker-registry reaperc2-myregistrykey \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-**3. App stack + DocumentDB ConfigMaps**
+**3. App stack + DocumentDB ConfigMaps** (Ingress is **not** included — use `./deploy-aws-k8s.sh apply-ingress` later, or `kubectl apply -f ingress.yaml -f ingressroute.yaml -n reaperc2-ns`)
 
 ```bash
 kubectl apply -k .
+# Or: ./deploy-aws-k8s.sh apply-core
 ```
 
 **4. Sync app user password to DocumentDB** (required on first deploy and after any password change)
@@ -163,7 +192,7 @@ Then set `deployment.yaml` `image:` to the tag you pushed (e.g. `123456789012.dk
 | DocumentDB host, user, password | `examples/documentdb-secret.local.yaml` (from template; not committed) |
 | Admin UI first login | `examples/admin-bootstrap-secret.local.yaml` → Secret `reaperc2-admin-bootstrap` |
 | ECR pull secret | `examples/registry-secret.yaml` (commands only) |
-| Operator AI (Bedrock, etc.) | `ai-config.yaml` + IRSA on ServiceAccount `reaperc2` (or `reaperc2-ai-secrets`) |
+| Operator AI | [`../operator-ai.local.yaml`](../operator-ai.local.yaml) from [`../operator-ai.yaml`](../operator-ai.yaml) + IRSA on `reaperc2` for Bedrock |
 
 ## Deploy (details)
 
@@ -174,9 +203,18 @@ Use the [checklist](#run-from-scratch-checklist) order. Notes:
 - **User Job:** creates the app user or **updates its password** to match the secret. Required unless infra already created the user with the exact same password and auth database.
 - **Init Job:** idempotent collections/indexes for `clients`, `heartbeat`, `data`, operators, engagements, etc. ReaperC2 also creates admin indexes on startup if you skip this Job.
 
-`kubectl apply -k .` applies ReaperC2, ingress, `reaperc2-ai-config` (Bedrock by default), and DocumentDB init scripts.
+`kubectl apply -k .` applies the ReaperC2 Deployment, ServiceAccount, Service, and DocumentDB-related ConfigMaps (CA bundle + init scripts). It does **not** apply `ingress.yaml` / `ingressroute.yaml` — use [`./deploy-aws-k8s.sh apply-ingress`](deploy-aws-k8s.sh) or `kubectl apply -f ingress.yaml -f ingressroute.yaml -n reaperc2-ns` after Traefik (and cert-manager, if you use ACME annotations) are ready.
 
-**Operator AI:** edit `ai-config.yaml` (region, model IDs), then configure Bedrock via **IRSA** ([`examples/bedrock-irsa.md`](examples/bedrock-irsa.md)) or `reaperc2-ai-secrets` API keys. Do **not** apply the root [`operator-ai.yaml`](../operator-ai.yaml) ConfigMap — it would overwrite this bundle’s `ai-config.yaml`.
+**Operator AI:** copy [`../operator-ai.yaml`](../operator-ai.yaml) → `../operator-ai.local.yaml`, set ConfigMap (Bedrock region, Foundry URL, **Azure deployment names**) and Secret (API keys). Apply the **`.local`** file only:
+
+```bash
+kubectl apply -f ../operator-ai.local.yaml
+kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+```
+
+Bedrock on EKS: **IRSA** ([`examples/bedrock-irsa.md`](examples/bedrock-irsa.md)) or Bedrock API key in the Secret. Foundry: `REAPER_AI_FOUNDRY_API_KEY` + resource URL (`https://YOUR_RESOURCE.openai.azure.com`) + deployment name from `az cognitiveservices account deployment list`.
+
+Raw `kubectl apply -k .` does **not** apply Operator AI (your live AI config stays in `.local` files, not in kustomize). The [`deploy-aws-k8s.sh`](deploy-aws-k8s.sh) `apply-secrets` and `all` commands apply `../operator-ai.local.yaml` when that file exists.
 
 **Admin UI login** is **not** DocumentDB. On first boot (empty `operators` collection), use `username` / `password` from `reaperc2-admin-bootstrap`. Change the password after login or create operators in MongoDB and remove the bootstrap secret.
 
@@ -219,7 +257,7 @@ kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
 kubectl rollout status deployment/reaperc2-deployment -n reaperc2-ns
 ```
 
-**Recommended on EKS — IRSA (no manual 12h updates):** attach a Bedrock-capable IAM role to the ReaperC2 ServiceAccount, set in `ai-config.yaml`:
+**Recommended on EKS — IRSA (no manual 12h updates):** attach a Bedrock-capable IAM role to the ReaperC2 ServiceAccount, set in `operator-ai.local.yaml` ConfigMap:
 
 ```yaml
 REAPER_AI_BEDROCK_USE_IAM: "1"
@@ -256,13 +294,14 @@ Open `http://127.0.0.1:8443` locally.
 
 | File | Purpose |
 |------|---------|
-| `kustomization.yaml` | `kubectl apply -k` entrypoint |
+| `kustomization.yaml` | `kubectl apply -k` entrypoint (core app + DocumentDB ConfigMaps; **no** ingress) |
+| `deploy-aws-k8s.sh` | Install/update: `check-local`, `all`, Jobs, `apply-ingress`, `teardown-ingress`, `teardown` |
 | `namespace.yaml` | `reaperc2-ns` |
-| `ai-config.yaml` | Operator AI ConfigMap (Bedrock / cloud; no Ollama) |
+| [`../operator-ai.yaml`](../operator-ai.yaml) | Operator AI template (ConfigMap + Secret); apply `operator-ai.local.yaml` |
 | `deployment.yaml` | ReaperC2 + DocumentDB env + CA volume |
 | `service.yaml` | ClusterIP :8080 (beacon) |
-| `ingress.yaml` | Standard Ingress for Traefik / cert-manager |
-| `ingressroute.yaml` | Traefik `IngressRoute` (beacon :8080) |
+| `ingress.yaml` | Standard Ingress for Traefik / cert-manager (**apply after** Traefik + cert-manager) |
+| `ingressroute.yaml` | Traefik `IngressRoute` (beacon :8080) — needs CRD `ingressroutes.traefik.io` |
 | `fetch-docdb-ca-bundle.sh` | Downloads RDS global CA PEM |
 | `docdb-init-job.yaml` | One-shot Job: collections + indexes |
 | `docdb-init-user-job.yaml` | Create/update app DB user password (master creds) |
@@ -274,6 +313,18 @@ Open `http://127.0.0.1:8443` locally.
 | `examples/registry-secret.yaml` | ECR pull secret instructions |
 
 ## Troubleshooting
+
+### Ingress, Traefik, cert-manager
+
+| Symptom | What to check |
+|---------|----------------|
+| `apply-ingress` fails: no matches for kind `IngressRoute` | Install Traefik **with CRDs** in the cluster (or temporarily skip `ingressroute.yaml` if you only use standard Ingress). |
+| `apply-ingress` fails: `clusterissuer` / cert-manager | Install cert-manager and create `ClusterIssuer` **`letsencrypt-prod`** (or edit `ingress.yaml` annotations to match your issuer name). |
+| Ingress stuck, HTTP-01 challenges fail | DNS for the hostname must point at your Traefik LB; security groups must allow HTTP (80) from the internet for ACME. |
+| App works via `port-forward` but not via ingress | Confirm `IngressClass` name is **`traefik`** (or change `ingressClassName` in `ingress.yaml`). Run `./deploy-aws-k8s.sh preflight`. |
+| Switch Let's Encrypt **staging → prod** (or change issuer) | Run `./deploy-aws-k8s.sh teardown-ingress` to remove Ingress/IngressRoute, the TLS Secret (`tls.secretName` in `ingress.yaml`), and cert-manager `Certificate` resources, then edit `cert-manager.io/cluster-issuer` in `ingress.yaml` and run `./deploy-aws-k8s.sh apply-ingress`. Does not remove the app `Deployment`. |
+
+Until ingress is sorted, use **`kubectl port-forward`** for the admin UI and (if needed) a separate path for beacon traffic.
 
 ### `reaperc2-deployment` CrashLoopBackOff
 
@@ -293,10 +344,39 @@ kubectl logs -n reaperc2-ns deployment/reaperc2-deployment --previous --tail=30
 
 **Auth still failing?** Run the full [Sync DocumentDB password](#sync-documentdb-password) block and confirm pod env: `kubectl exec -n reaperc2-ns deployment/reaperc2-deployment -- env | grep '^MONGO_'`.
 
+If you applied manifests without `-n reaperc2-ns` and the YAML had no `metadata.namespace`, resources can land in **`default`**. Inspect then delete (run locally where `kubectl` + AWS auth work):
+
+```bash
+NS=default
+kubectl get deploy,svc,po,ing,job,cm,secret,sa -n "$NS"
+kubectl get ingressroute -n "$NS" 2>/dev/null || true
+
+kubectl delete deployment reaperc2-deployment -n "$NS" --ignore-not-found
+kubectl delete svc reaperc2-service -n "$NS" --ignore-not-found
+kubectl delete ingress reaperc2-ingress -n "$NS" --ignore-not-found
+kubectl delete ingressroute reaperc2-ingressroute -n "$NS" --ignore-not-found
+kubectl delete job docdb-init docdb-init-user -n "$NS" --ignore-not-found
+kubectl delete sa reaperc2 -n "$NS" --ignore-not-found
+kubectl delete cm docdb-ca-cert docdb-init-scripts reaperc2-ai-config -n "$NS" --ignore-not-found
+kubectl delete secret reaperc2-documentdb-credentials reaperc2-documentdb-admin reaperc2-admin-bootstrap reaperc2-ai-secrets reaperc2-myregistrykey -n "$NS" --ignore-not-found
+```
+
+If you used cert-manager ACME on that ingress, also `kubectl get certificate,certificaterequest -n "$NS"` and delete any Reaper-related certificates.
+
 ## Teardown (app only)
+
+Removes the ReaperC2 workload, ingress, DocumentDB app secret (if the `.local.yaml` file exists), init Jobs, and legacy Ollama objects. It does **not** delete the namespace, DocumentDB itself, admin/bootstrap secrets, ECR pull secret, or Operator AI — remove those with `kubectl delete` if you want a clean namespace.
+
+```bash
+cd deployments/k8s/AWS
+./deploy-aws-k8s.sh teardown
+```
+
+Equivalent manual commands:
 
 ```bash
 kubectl delete -k . --ignore-not-found
+kubectl delete -f ingress.yaml -f ingressroute.yaml -n reaperc2-ns --ignore-not-found
 kubectl delete -f examples/documentdb-secret.local.yaml --ignore-not-found
 kubectl delete -f docdb-init-job.yaml -f docdb-init-user-job.yaml --ignore-not-found
 kubectl delete deployment/ollama service/ollama pvc/ollama-data -n reaperc2-ns --ignore-not-found
