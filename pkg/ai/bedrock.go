@@ -67,15 +67,46 @@ func chatBedrock(ctx context.Context, cfg ProviderSettings, system string, messa
 		return "", fmt.Errorf("AWS Bedrock: unexpected output type")
 	}
 	var parts []string
-	for _, block := range msg.Value.Content {
-		if t, ok := block.(*types.ContentBlockMemberText); ok && strings.TrimSpace(t.Value) != "" {
-			parts = append(parts, t.Value)
-		}
-	}
+	appendBedrockOutputParts(&parts, msg.Value.Content)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("AWS Bedrock: empty message content")
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n")), nil
+}
+
+// appendBedrockOutputParts collects assistant-visible text from Converse output blocks.
+// Reasoning models (e.g. Claude 3.7+ with extended thinking) may return reasoningContent
+// alongside or before text; we surface reasoning text when plain text is absent or sparse.
+func appendBedrockOutputParts(parts *[]string, blocks []types.ContentBlock) {
+	for _, block := range blocks {
+		switch b := block.(type) {
+		case *types.ContentBlockMemberText:
+			if s := strings.TrimSpace(b.Value); s != "" {
+				*parts = append(*parts, s)
+			}
+		case *types.ContentBlockMemberReasoningContent:
+			appendReasoningContentParts(parts, b.Value)
+		default:
+			// toolUse, toolResult, image, etc. — not mapped to chat text here
+		}
+	}
+}
+
+func appendReasoningContentParts(parts *[]string, rc types.ReasoningContentBlock) {
+	if rc == nil {
+		return
+	}
+	switch r := rc.(type) {
+	case *types.ReasoningContentBlockMemberReasoningText:
+		if r.Value.Text != nil {
+			if s := strings.TrimSpace(*r.Value.Text); s != "" {
+				*parts = append(*parts, s)
+			}
+		}
+	case *types.ReasoningContentBlockMemberRedactedContent:
+		// No human-readable text; skip
+	default:
+	}
 }
 
 // bedrockMaxTokensInt32 maps configured max tokens to int32 without overflow (G115).

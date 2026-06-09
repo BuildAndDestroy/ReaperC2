@@ -17,7 +17,7 @@ spec:
       serviceAccountName: reaperc2
       containers:
         - name: reaperc2-deployment
-          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:latest
+          image: registry.reaper-ut.com/reaperc2:latest
           resources:
             limits:
               cpu: "1"
@@ -96,5 +96,3 @@ spec:
         - name: docdb-ca-volume
           configMap:
             name: docdb-ca-cert
-      imagePullSecrets:
-        - name: reaperc2-myregistrykey

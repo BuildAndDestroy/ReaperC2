@@ -37,3 +37,12 @@ Not used for DocumentDB. After the first operator exists, bootstrap env vars are
 See [bedrock-irsa.md](bedrock-irsa.md) and [bedrock-iam-policy.json](bedrock-iam-policy.json). Do not grant Bedrock on the EKS node group role unless you accept cluster-wide exposure.
 
 For ECR pull credentials, use the commands in `registry-secret.yaml` (no Secret manifest in git).
+
+## Operator AI
+
+Copy [`../operator-ai.yaml`](../operator-ai.yaml) → [`../operator-ai.local.yaml`](../operator-ai.local.yaml) (gitignored), edit ConfigMap + Secret, then:
+
+```bash
+kubectl apply -f ../operator-ai.local.yaml
+kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+```

@@ -7,4 +7,6 @@ URL="https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
 
 echo "Downloading DocumentDB/RDS CA bundle to ${OUT}"
 curl -fsSL -o "${OUT}" "${URL}"
-echo "Done. Apply manifests with: kubectl apply -k ${SCRIPT_DIR}"
+echo "Done. Apply core stack from an overlay, e.g.:"
+echo "  kubectl apply -k ${SCRIPT_DIR}/../overlays/aws-ecr"
+echo "  kubectl apply -k ${SCRIPT_DIR}/../overlays/k3s"

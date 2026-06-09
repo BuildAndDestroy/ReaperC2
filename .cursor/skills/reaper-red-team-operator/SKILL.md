@@ -14,6 +14,7 @@ Read and follow:
 1. **[SKILLS.md](../../../SKILLS.md)** — ReaperC2 platform map, beacon workflow, authorization.
 2. **[red_team_operator_skills.md](red_team_operator_skills.md)** — tradecraft reference (recon, enumeration, cloud, reporting).
 3. **[mitre_attck_skills.md](mitre_attck_skills.md)** — MITRE ATT&CK Enterprise matrix reference (tactics, techniques, sub-techniques).
+4. **[purple-team-operator.md](purple-team-operator.md)** — optional: translate red-team findings into detection rules, hardening, and coverage analysis (purple-team handoff).
 
 **Operator AI** (`/ai`) merges these from disk when present (`REAPERC2_ROOT`, usually `/root` in Docker). Any other `*_skills.md` in this folder is picked up automatically. Override everything with `REAPER_AI_SKILLS_FILE` for a single custom file.
 

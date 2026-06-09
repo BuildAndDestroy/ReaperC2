@@ -88,7 +88,7 @@ terraform output -raw mongodb_private_uri
 3. **MongoDB variables**: Map your managed DB credentials into the same env vars used in other manifests (`MONGO_HOST`, `MONGO_PORT`, `MONGO_USERNAME`, `MONGO_PASSWORD`, `MONGO_DATABASE`). Derive them from the DigitalOcean control panel or from `mongodb_private_uri`.  
    DigitalOcean managed databases commonly require TLS; if connections fail, set **`MONGO_USE_TLS=true`** (see `pkg/dbconnections/mongoconnections.go`).
 
-4. **Manifests**: Start from `deployments/k8s/OnPrem/full-deployment.yaml` or `deployments/k8s/AWS/` (Kustomize + DocumentDB) and replace registry URLs, secrets, and resource sizes for your image and networking.
+4. **Manifests**: Start from `deployments/k8s/OnPrem/full-deployment.yaml` or `deployments/k8s/reaperc2/` (Kustomize + DocumentDB) and replace registry URLs, secrets, and resource sizes for your image and networking.
 
 Because the database is on the **VPC private network**, use the **private** host/URI from DigitalOcean for traffic from pods inside this cluster.
 

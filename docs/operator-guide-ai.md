@@ -70,7 +70,7 @@ Legacy: `REAPER_AI_API_KEY`, `REAPER_AI_API_URL`, `REAPER_AI_MODEL`.
 
 ### Azure AI Foundry
 
-Uses the [OpenAI v1-compatible endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/endpoints) on your Foundry / Azure OpenAI resource (`/openai/v1/chat/completions` and `/openai/v1/models`). On Azure, the model field is often your **deployment name** (from discovery or `REAPER_AI_FOUNDRY_MODELS`).
+Uses the [OpenAI v1-compatible endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/endpoints) on your Foundry / Azure OpenAI resource (`/openai/v1/chat/completions` and `/openai/v1/models`). On Azure, the model field is often your **deployment name** (from discovery or `REAPER_AI_FOUNDRY_MODELS`). Requests use **`max_completion_tokens`** (not `max_tokens`) for this provider so **GPT-5.x** and similar deployments work, and **`temperature` is set to `1`** (Azure rejects other values for some SKUs). Deployments that do not support **chat completions** on this path (e.g. some Claude SKUs) return `api_not_supported` — use **Anthropic** or **AWS Bedrock** in ReaperC2 for those models instead.
 
 | Variable | Purpose |
 |----------|---------|
@@ -85,6 +85,8 @@ Catalog id prefix: `foundry:` (aliases `azure`, `azure_foundry` in `REAPER_AI_DE
 ### AWS Bedrock
 
 Uses the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html). **Claude Opus/Sonnet 4.x** must use **inference profile** IDs (e.g. `us.anthropic.claude-opus-4-7`, `us.anthropic.claude-sonnet-4-6` in `us-east-1`), not bare `anthropic.claude-*` foundation IDs — otherwise Converse returns `on-demand throughput isn't supported`. Nova and many other models still use foundation IDs (`amazon.nova-lite-v1:0`). ReaperC2 auto-prefixes bare Claude IDs using `REAPER_AI_BEDROCK_INFERENCE_PREFIX` (default derived from region: `us`, `eu`, `jp`, `au`, `global`).
+
+Reasoning models can return **`reasoningContent`** blocks (chain-of-thought) from Converse in addition to or before plain **`text`**. ReaperC2 includes reasoning text in the assistant reply so you do not see a false **`AWS Bedrock: empty message content`** when the model only populated reasoning blocks.
 
 | Variable | Purpose |
 |----------|---------|

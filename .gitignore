@@ -12,3 +12,7 @@
 
 # Local Docker Compose secrets
 .env
+
+# Local Go build artifacts (modules resolve via go.mod; vendor only if you explicitly vendor)
+/vendor/
+/bin/
