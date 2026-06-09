@@ -1,29 +1,6 @@
+# Legacy path: forwards to the shared reaperc2 overlay (ECR pull secret patch).
+# Prefer: kubectl apply -k ../reaperc2/overlays/aws-ecr
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-namespace: reaperc2-ns
-
-# Ingress is applied separately: ./deploy-aws-k8s.sh apply-ingress
-# (avoids cert-manager / Traefik / IngressRoute CRD blocking a working app + port-forward admin).
 resources:
-  - namespace.yaml
-  - serviceaccount.yaml
-  - deployment.yaml
-  - service.yaml
-
-# Download the RDS trust bundle first: ./fetch-docdb-ca-bundle.sh
-configMapGenerator:
-  - name: docdb-ca-cert
-    files:
-      - rds-combined-ca-bundle.pem
-    options:
-      disableNameSuffixHash: true
-  - name: docdb-init-scripts
-    files:
-      - scripts/docdb-common.sh
-      - scripts/docdb-init.sh
-      - scripts/docdb-init.js
-      - scripts/docdb-init-user.sh
-      - scripts/docdb-create-user.js
-    options:
-      disableNameSuffixHash: true
+  - ../reaperc2/overlays/aws-ecr

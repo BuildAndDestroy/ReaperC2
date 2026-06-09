@@ -9,10 +9,10 @@
 #
 # AWS EKS: apply operator-ai.local.yaml instead of patching secrets.
 # Do not kubectl apply -f operator-ai.yaml (placeholders only).
-# Safe apply -k for the app stack: deployments/k8s/AWS (no Operator AI ConfigMap in kustomize).
+# Safe apply -k for the app stack: deployments/k8s/reaperc2/overlays (no Operator AI ConfigMap in kustomize).
 #
 # Deployment must reference reaperc2-ai-config and reaperc2-ai-secrets via envFrom
-# (see deployments/k8s/AWS/deployment.yaml).
+# (see deployments/k8s/reaperc2/base/deployment.yaml).
 
 apiVersion: v1
 kind: ConfigMap

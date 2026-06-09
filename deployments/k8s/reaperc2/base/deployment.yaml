@@ -96,5 +96,3 @@ spec:
         - name: docdb-ca-volume
           configMap:
             name: docdb-ca-cert
-      imagePullSecrets:
-        - name: reaperc2-myregistrykey

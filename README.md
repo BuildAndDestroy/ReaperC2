@@ -235,8 +235,8 @@ make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reape
 
 **Deploy to EKS after push**
 
-1. Set the image in [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
-2. Follow [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#quick-install-script): optional [`deploy-aws-k8s.sh`](deployments/k8s/AWS/deploy-aws-k8s.sh) `all`, or manually `fetch-docdb-ca-bundle.sh`, secrets, `kubectl apply -k deployments/k8s/AWS`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready.
+1. Set the image in [`deployments/k8s/reaperc2/base/deployment.yaml`](deployments/k8s/reaperc2/base/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
+2. Follow [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#quick-install-script): optional [`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh) `all`, or manually `fetch-ca`, secrets, `kubectl apply -k deployments/k8s/AWS` (legacy shim) or `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready.
 3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
 
 ### Docker build (single arch, any registry)
@@ -270,7 +270,7 @@ Push to your registry, then point **`deployments/k8s/**`** manifests at that tag
 
 Valid values: `AWS`, `AZURE`, `GCP`, `ONPREM` ([`pkg/deploymehere/deploymehere.go`](pkg/deploymehere/deploymehere.go)). Invalid or unset → treated as `ONPREM`.
 
-The Dockerfile default is `ONPREM` for local Compose. **You do not need to bake `AWS` into the ECR image** for EKS: [`deployments/k8s/AWS/deployment.yaml`](deployments/k8s/AWS/deployment.yaml) already sets `DEPLOY_ENV=AWS`, which overrides the image default at pod start.
+The Dockerfile default is `ONPREM` for local Compose. **You do not need to bake `AWS` into the ECR image** for EKS: [`deployments/k8s/reaperc2/base/deployment.yaml`](deployments/k8s/reaperc2/base/deployment.yaml) already sets `DEPLOY_ENV=AWS`, which overrides the image default at pod start.
 
 To change the image default at build time (optional):
 
@@ -332,7 +332,7 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 | Path | Use when |
 |------|----------|
-| [`deployments/k8s/AWS/`](deployments/k8s/AWS/) | EKS + **DocumentDB** + ECR (`kubectl apply -k deployments/k8s/AWS` for core; [`deploy-aws-k8s.sh`](deployments/k8s/AWS/deploy-aws-k8s.sh) for full flow + ingress) |
+| [`deployments/k8s/reaperc2/`](deployments/k8s/reaperc2/) | EKS or **k3s** + **DocumentDB** + Traefik/cert-manager ([`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh); `kubectl apply -k deployments/k8s/AWS` still works as **aws-ecr** shim) |
 | [`deployments/k8s/OnPrem/`](deployments/k8s/OnPrem/) | In-cluster MongoDB |
 | [`deployments/k8s/full-deployment.yaml`](deployments/k8s/full-deployment.yaml) | Sample all-in-one with in-cluster Mongo |
 
@@ -340,11 +340,11 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 ```bash
 make build   # or: make build IMAGE_TAG=v1.0.0
-# Edit deployments/k8s/AWS/deployment.yaml (ECR image), ingress hostnames, examples/documentdb-secret.yaml
+# Edit deployments/k8s/reaperc2/base/deployment.yaml (ECR image), ingress hostnames, examples/documentdb-secret.yaml
 
-cd deployments/k8s/AWS
+cd deployments/k8s/reaperc2
 ./fetch-docdb-ca-bundle.sh
-# Prefer: ./deploy-aws-k8s.sh all   (then job-docdb-user / job-docdb-init / apply-ingress)
+# Prefer: ./deploy-cluster.sh all   (then job-docdb-user / job-docdb-init / apply-ingress)
 kubectl apply -f namespace.yaml -f examples/documentdb-secret.yaml
 # ECR pull secret + docdb jobs — see AWS README
 kubectl apply -k .
@@ -357,4 +357,4 @@ kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=12
 * DocumentDB: split secret keys (`host`, `username`, …), not a single URI; run **`fetch-docdb-ca-bundle.sh`** then **`docdb-init-job.yaml`** for collections/indexes.
 * **Operator AI on EKS:** copy `deployments/k8s/operator-ai.yaml` → `operator-ai.local.yaml`, apply locally (ConfigMap + secrets) — see AWS README and [Operator AI](docs/operator-guide-ai.md).
 
-Full checklist (read [DocumentDB pitfalls](deployments/k8s/AWS/README.md#documentdb-pitfalls-read-first) first): [`deployments/k8s/AWS/README.md`](deployments/k8s/AWS/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).
+Full checklist (read [DocumentDB pitfalls](deployments/k8s/reaperc2/README.md#documentdb-pitfalls-read-first) first): [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#run-from-scratch-checklist) and [`docs/kubernetes.md`](docs/kubernetes.md).

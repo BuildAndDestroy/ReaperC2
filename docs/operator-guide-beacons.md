@@ -109,3 +109,16 @@ Queue work from **Commands**; results appear in output history and audit logs.
 | Embedded build fails | Go installed on server; Scythe sources at `third_party/Scythe` or `REAPERC2_ROOT` |
 | No beacons on Commands page | Generate under **Beacons** for the **active** engagement |
 | Topology all gray | Beacon never checked in, or interval much shorter than actual sleep |
+| **`tls: failed to verify certificate: x509: certificate signed by unknown authority`** (Scythe `Http` logs `[-] Error: request failed: Get "https://…/heartbeat"`) | The beacon host does **not** trust the **issuer** of the certificate it received. Common causes: (1) **Split DNS / internal VIP** — the hostname resolves to an **internal** load balancer that presents a **different** cert (corporate CA, self-signed, or old staging) while the public Internet sees Let’s Encrypt. Compare `dig` / `curl -v` from the **beacon machine** vs your laptop. (2) **TLS interception** (corporate proxy) — trust the proxy root or use lab-only `-skip-tls-verify`. (3) **Stale or custom-built Scythe** — rebuild **Scythe.embedded** (or CLI Scythe) with a **current Go** (repo uses Go 1.24); very old runtimes or minimal containers **without `ca-certificates`** can fail verification. (4) **Let’s Encrypt staging** still in front of some paths — staging chains use CAs that are not in default trust stores. |
+
+### TLS: quick checks (run on the **same machine** that runs the failing Scythe)
+
+```bash
+# What DNS and cert does this host actually see?
+curl -vI "https://YOUR_BEACON_HOST/heartbeat" 2>&1 | sed -n '1,30p'
+echo | openssl s_client -connect YOUR_BEACON_HOST:443 -servername YOUR_BEACON_HOST 2>&1 | openssl x509 -noout -issuer -subject
+```
+
+If `openssl` shows a **corporate** issuer or **Fake LE** / staging, fix DNS or ingress before chasing ReaperC2 bugs.
+
+**Lab only:** Scythe `Http` supports **`-skip-tls-verify`** (see Scythe Http options in the UI). Do not use in production engagements.

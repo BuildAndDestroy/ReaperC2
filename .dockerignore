@@ -7,7 +7,7 @@
 .env.*
 !.env.example
 *.pem
-deployments/k8s/AWS/rds-combined-ca-bundle.pem
+deployments/k8s/reaperc2/base/rds-combined-ca-bundle.pem
 # Host-built binaries for Dockerfile.pack (make build-binaries)
 # Do not ignore vendor/ — needed for build-docker and host compile
 terminals

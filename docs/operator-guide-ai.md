@@ -86,6 +86,8 @@ Catalog id prefix: `foundry:` (aliases `azure`, `azure_foundry` in `REAPER_AI_DE
 
 Uses the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html). **Claude Opus/Sonnet 4.x** must use **inference profile** IDs (e.g. `us.anthropic.claude-opus-4-7`, `us.anthropic.claude-sonnet-4-6` in `us-east-1`), not bare `anthropic.claude-*` foundation IDs — otherwise Converse returns `on-demand throughput isn't supported`. Nova and many other models still use foundation IDs (`amazon.nova-lite-v1:0`). ReaperC2 auto-prefixes bare Claude IDs using `REAPER_AI_BEDROCK_INFERENCE_PREFIX` (default derived from region: `us`, `eu`, `jp`, `au`, `global`).
 
+Reasoning models can return **`reasoningContent`** blocks (chain-of-thought) from Converse in addition to or before plain **`text`**. ReaperC2 includes reasoning text in the assistant reply so you do not see a false **`AWS Bedrock: empty message content`** when the model only populated reasoning blocks.
+
 | Variable | Purpose |
 |----------|---------|
 | `REAPER_AI_BEDROCK_ENABLED` | Set to `1` to enable |
