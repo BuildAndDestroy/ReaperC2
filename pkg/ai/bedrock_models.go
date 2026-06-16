@@ -13,6 +13,11 @@ func bedrockConverseModelID(modelID string) string {
 	if modelID == "" || bedrockAlreadyInferenceProfile(modelID) {
 		return modelID
 	}
+	lower := strings.ToLower(modelID)
+	// Claude Fable 5 uses a global inference profile on Bedrock Converse (not us./eu.*).
+	if strings.Contains(lower, "claude-fable-5") && strings.HasPrefix(lower, "anthropic.") {
+		return "global." + modelID
+	}
 	if !bedrockRequiresInferenceProfile(modelID) {
 		return modelID
 	}

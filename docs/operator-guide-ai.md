@@ -29,26 +29,26 @@ Set on the ReaperC2 process (see `.env.example`). Configure **provider credentia
 | Anthropic | `GET /v1/models` | `REAPER_AI_ANTHROPIC_DISCOVER=0` |
 | Azure AI Foundry | `GET /openai/v1/models` (OpenAI-compatible) | `REAPER_AI_FOUNDRY_DISCOVER=0` |
 
-Discovered models are **merged** with curated latest IDs (`gpt-5.5`, `claude-opus-4-7`, etc.) and any `REAPER_AI_*_MODELS` list. They appear in the Operator AI dropdown even when using `REAPER_AI_MODELS`. Bedrock still uses explicit model IDs (enable models in the AWS console).
+Discovered models are **merged** with curated latest IDs (`gpt-5.5`, `claude-fable-5`, etc.) and any `REAPER_AI_*_MODELS` list. They appear in the Operator AI dropdown even when using `REAPER_AI_MODELS`. Bedrock still uses explicit model IDs (enable models in the AWS console).
 
 Optional comma-separated extras or overrides per provider:
 
 | Variable | Example |
 |----------|---------|
 | `REAPER_AI_OPENAI_MODELS` | `gpt-5.5,gpt-4.1` |
-| `REAPER_AI_ANTHROPIC_MODELS` | `claude-opus-4-7,claude-sonnet-4-6` |
+| `REAPER_AI_ANTHROPIC_MODELS` | `claude-fable-5,claude-opus-4-7,claude-sonnet-4-6` |
 | `REAPER_AI_FOUNDRY_MODELS` | `gpt-5.5,gpt-4.1` (deployment names on Azure) |
 | `REAPER_AI_OLLAMA_MODELS` | `llama3.2,mistral` |
-| `REAPER_AI_BEDROCK_MODELS` | `us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0` |
+| `REAPER_AI_BEDROCK_MODELS` | `global.anthropic.claude-fable-5,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0` |
 | `REAPER_AI_BEDROCK_INFERENCE_PREFIX` | `us` (optional; auto from region) |
 
 Or a unified base list (discovery still adds live models for OpenAI, Anthropic, Foundry, and Ollama):
 
 ```env
-REAPER_AI_MODELS=openai:gpt-5.5,anthropic:claude-opus-4-7,foundry:gpt-5.5,bedrock:anthropic.claude-opus-4-7,ollama:llama3.2
+REAPER_AI_MODELS=openai:gpt-5.5,anthropic:claude-fable-5,foundry:gpt-5.5,bedrock:anthropic.claude-fable-5,ollama:llama3.2
 ```
 
-If discovery is off and no `*_MODELS` is set, built-in defaults include **`gpt-5.5`**, **`claude-opus-4-7`**, and **`anthropic.claude-opus-4-7`** (Bedrock). Selecting a model still requires access on that provider. Legacy single-model vars (`REAPER_AI_OPENAI_MODEL`, etc.) still work.
+If discovery is off and no `*_MODELS` is set, built-in defaults include **`gpt-5.5`**, **`claude-fable-5`**, and **`anthropic.claude-fable-5`** (Bedrock → **`global.anthropic.claude-fable-5`** via Converse). Selecting a model still requires access on that provider. Legacy single-model vars (`REAPER_AI_OPENAI_MODEL`, etc.) still work.
 
 ### OpenAI
 
@@ -84,7 +84,7 @@ Catalog id prefix: `foundry:` (aliases `azure`, `azure_foundry` in `REAPER_AI_DE
 
 ### AWS Bedrock
 
-Uses the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html). **Claude Opus/Sonnet 4.x** must use **inference profile** IDs (e.g. `us.anthropic.claude-opus-4-7`, `us.anthropic.claude-sonnet-4-6` in `us-east-1`), not bare `anthropic.claude-*` foundation IDs — otherwise Converse returns `on-demand throughput isn't supported`. Nova and many other models still use foundation IDs (`amazon.nova-lite-v1:0`). ReaperC2 auto-prefixes bare Claude IDs using `REAPER_AI_BEDROCK_INFERENCE_PREFIX` (default derived from region: `us`, `eu`, `jp`, `au`, `global`).
+Uses the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html). **Claude Opus/Sonnet 4.x** must use **regional inference profile** IDs (e.g. `us.anthropic.claude-opus-4-7`, `us.anthropic.claude-sonnet-4-6` in `us-east-1`), not bare `anthropic.claude-*` foundation IDs — otherwise Converse returns `on-demand throughput isn't supported`. **Claude Fable 5** uses a **global** inference profile: `global.anthropic.claude-fable-5` (ReaperC2 maps bare `anthropic.claude-fable-5` to that ID). Nova and many other models still use foundation IDs (`amazon.nova-lite-v1:0`). ReaperC2 auto-prefixes other bare Claude 4.x IDs using `REAPER_AI_BEDROCK_INFERENCE_PREFIX` (default derived from region: `us`, `eu`, `jp`, `au`, `global`).
 
 Reasoning models can return **`reasoningContent`** blocks (chain-of-thought) from Converse in addition to or before plain **`text`**. ReaperC2 includes reasoning text in the assistant reply so you do not see a false **`AWS Bedrock: empty message content`** when the model only populated reasoning blocks.
 

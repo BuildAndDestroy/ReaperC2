@@ -72,7 +72,7 @@ func TestDiscoverAnthropicModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(names) != 3 || names[0] != "claude-opus-4-7" {
+	if len(names) != 4 || names[0] != "claude-fable-5" {
 		t.Fatalf("names = %#v", names)
 	}
 }
@@ -99,7 +99,7 @@ func TestAnthropicModelNamesMergedDiscoverOffUsesDefaults(t *testing.T) {
 	t.Setenv("REAPER_AI_ANTHROPIC_MODEL", "")
 
 	names := anthropicModelNamesMerged()
-	if len(names) != 3 || names[0] != "claude-opus-4-7" {
+	if len(names) != 4 || names[0] != "claude-fable-5" {
 		t.Fatalf("names = %#v", names)
 	}
 }

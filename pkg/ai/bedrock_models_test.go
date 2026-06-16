@@ -25,6 +25,16 @@ func TestBedrockConverseModelIDPassthrough(t *testing.T) {
 	}
 }
 
+func TestBedrockConverseModelIDClaudeFable5GlobalProfile(t *testing.T) {
+	t.Setenv("REAPER_AI_BEDROCK_REGION", "us-east-1")
+	if got := bedrockConverseModelID("anthropic.claude-fable-5"); got != "global.anthropic.claude-fable-5" {
+		t.Fatalf("got %q", got)
+	}
+	if got := bedrockConverseModelID("global.anthropic.claude-fable-5"); got != "global.anthropic.claude-fable-5" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestBedrockInferenceProfilePrefixEU(t *testing.T) {
 	t.Setenv("REAPER_AI_BEDROCK_REGION", "eu-west-1")
 	t.Setenv("REAPER_AI_BEDROCK_INFERENCE_PREFIX", "")
