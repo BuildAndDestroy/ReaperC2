@@ -14,12 +14,14 @@ var (
 		"gpt-4o",
 	}
 	preferredAnthropicModels = []string{
+		"claude-fable-5",
 		"claude-opus-4-7",
 		"claude-sonnet-4-6",
 		"claude-haiku-4-5-20251001",
 	}
-	// Base foundation model IDs; resolved to inference profiles (e.g. us.anthropic.*) at runtime.
+	// Base foundation model IDs; resolved to inference profiles (e.g. us.anthropic.*, global.anthropic.*) at runtime.
 	preferredBedrockModels = []string{
+		"anthropic.claude-fable-5",
 		"anthropic.claude-opus-4-7",
 		"anthropic.claude-sonnet-4-6",
 		"anthropic.claude-haiku-4-5-20251001-v1:0",

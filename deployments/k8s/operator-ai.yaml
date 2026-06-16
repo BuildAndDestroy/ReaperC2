@@ -1,14 +1,15 @@
 # Operator AI for Kubernetes (ConfigMap + Secret).
 # Mirrors .env.example — one file for model catalog and API keys.
 #
-# Setup (do not commit secrets):
-#   cp deployments/k8s/operator-ai.yaml deployments/k8s/operator-ai.local.yaml
-#   # Edit operator-ai.local.yaml (keys, URLs, deployment names)
-#   kubectl apply -f deployments/k8s/operator-ai.local.yaml
-#   kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+# Bedrock API key path (simplest): replace CHANGE_ME in the Secret below with your
+# console “Generate API key” value; set REAPER_AI_BEDROCK_USE_IAM to "0" in the ConfigMap.
+# Then:  kubectl apply -f deployments/k8s/operator-ai.yaml && kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
 #
-# AWS EKS: apply operator-ai.local.yaml instead of patching secrets.
-# Do not kubectl apply -f operator-ai.yaml (placeholders only).
+# For git: copy to operator-ai.local.yaml, edit secrets there, add operator-ai.local.yaml to .gitignore — do not commit real keys.
+#
+# EKS IRSA instead of an API key: leave REAPER_AI_BEDROCK_API_KEY empty (or remove the key),
+# set REAPER_AI_BEDROCK_USE_IAM to "1", and annotate the workload service account (see examples/bedrock-irsa.md).
+#
 # Safe apply -k for the app stack: deployments/k8s/reaperc2/overlays (no Operator AI ConfigMap in kustomize).
 #
 # Deployment must reference reaperc2-ai-config and reaperc2-ai-secrets via envFrom
@@ -26,7 +27,7 @@ data:
   REAPER_AI_MAX_TOKENS: "2048"
 
   # Optional unified catalog (foundry:/bedrock:/openai: prefixes). Discovery still adds live models.
-  # REAPER_AI_MODELS: "bedrock:us.anthropic.claude-opus-4-7,foundry:YOUR_DEPLOYMENT,openai:gpt-4o-mini"
+  # REAPER_AI_MODELS: "bedrock:global.anthropic.claude-fable-5,foundry:YOUR_DEPLOYMENT,openai:gpt-4o-mini"
 
   # --- OpenAI ---
   # REAPER_AI_OPENAI_API_URL: "https://api.openai.com/v1"
@@ -36,7 +37,7 @@ data:
   # --- Anthropic ---
   # REAPER_AI_ANTHROPIC_API_URL: "https://api.anthropic.com/v1"
   # REAPER_AI_ANTHROPIC_DISCOVER: "1"
-  # REAPER_AI_ANTHROPIC_MODELS: "claude-opus-4-7,claude-sonnet-4-6"
+  # REAPER_AI_ANTHROPIC_MODELS: "claude-fable-5,claude-opus-4-7,claude-sonnet-4-6"
 
   # --- Azure AI Foundry (resource base URL; ReaperC2 appends /openai/v1) ---
   # Use Azure deployment names in FOUNDRY_MODELS (from: az cognitiveservices account deployment list).
@@ -48,9 +49,10 @@ data:
   # --- AWS Bedrock ---
   REAPER_AI_BEDROCK_ENABLED: "1"
   REAPER_AI_BEDROCK_REGION: "us-east-1"
-  REAPER_AI_BEDROCK_USE_IAM: "1"
+  # "0" = use REAPER_AI_BEDROCK_API_KEY (Secret below). "1" = default credential chain / IRSA when no API key.
+  REAPER_AI_BEDROCK_USE_IAM: "0"
   # REAPER_AI_BEDROCK_INFERENCE_PREFIX: "us"
-  REAPER_AI_BEDROCK_MODELS: "us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0"
+  REAPER_AI_BEDROCK_MODELS: "global.anthropic.claude-fable-5,us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0"
   # REAPER_AI_BEDROCK_MODEL: "us.anthropic.claude-opus-4-7"
 
   # --- Ollama (optional in-cluster or host) ---
@@ -66,7 +68,7 @@ metadata:
   namespace: reaperc2-ns
 type: Opaque
 stringData:
-  # Fill in operator-ai.local.yaml — leave unused keys as "" or remove them.
+  # Replace CHANGE_ME values before apply. Unused keys may stay "".
 
   # OpenAI
   REAPER_AI_OPENAI_API_KEY: ""
@@ -78,8 +80,8 @@ stringData:
   REAPER_AI_FOUNDRY_API_KEY: "CHANGE_ME"
 
   # AWS Bedrock — pick one auth path:
-  # (A) Bedrock API key from AWS console (bearer)
-  REAPER_AI_BEDROCK_API_KEY: ""
+  # (A) Bedrock API key from AWS console (“Generate API key” — bearer token, not AKIA…)
+  REAPER_AI_BEDROCK_API_KEY: "CHANGE_ME"
   # (B) Temporary IAM / SSO (12h) — all three required
   REAPER_AI_BEDROCK_ACCESS_KEY_ID: ""
   REAPER_AI_BEDROCK_SECRET_ACCESS_KEY: ""
