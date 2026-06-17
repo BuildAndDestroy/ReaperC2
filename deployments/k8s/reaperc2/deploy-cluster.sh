@@ -33,6 +33,8 @@ usage() {
   cat <<'EOF'
 Usage: ./deploy-cluster.sh <command> [args]
 
+Also see ./deploy.sh (optional --with-egress / --no-egress) and ./reroll.sh (rollout + optional secrets/ECR refresh).
+
 Commands:
   help              Show this help.
   check-local       Exit 0 only if required *.local.yaml, bundled YAML, and (aws) ECR image in base/deployment.yaml are valid (no kubectl).

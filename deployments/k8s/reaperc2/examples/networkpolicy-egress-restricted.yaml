@@ -1,0 +1,46 @@
+# Template — copy to networkpolicy-egress-restricted.local.yaml (gitignored via examples/*.local.yaml).
+# Egress-only lockdown for pods labeled app=reaperc2-deployment. Ingress is unchanged (default allow).
+#
+# Requirements:
+#   - A CNI that actually enforces NetworkPolicy (e.g. Calico, Cilium, or AWS VPC CNI with network policy mode).
+#   - Edit the DocumentDB ipBlock cidr below to a range that contains your cluster’s DocumentDB endpoint
+#     (often your VPC CIDR, a tighter subnet, or a /32 if you resolve to a stable IP — endpoints can change).
+#   - If Operator AI or other features need additional ports/destinations, add egress rules before applying.
+#
+# Apply after the Deployment exists, e.g.  ./deploy.sh --with-egress all
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: reaperc2-egress-restricted
+  namespace: reaperc2-ns
+spec:
+  podSelector:
+    matchLabels:
+      app: reaperc2-deployment
+  policyTypes:
+    - Egress
+  egress:
+    # DNS (CoreDNS / kube-dns in kube-system)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS: Bedrock, STS, Foundry, ACME, etc.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # DocumentDB — MUST match your network: replace 10.0.0.0/8 with your VPC or peered CIDR.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 27017

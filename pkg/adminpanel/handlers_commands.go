@@ -282,8 +282,12 @@ async function loadArtifactsList() {
 }
 document.getElementById('loadArt').onclick = function() { loadArtifactsList(); };
 document.getElementById('refPending').onclick = function() { loadPending(); };
-document.getElementById('cmdBeacon').addEventListener('change', function() { loadPending(); });
+document.getElementById('cmdBeacon').addEventListener('change', function() {
+  loadPending();
+  loadCommandHistory();
+});
 loadPending();
+if (document.getElementById('cmdBeacon').value) { loadCommandHistory(); }
 async function loadCommandHistory() {
   var cid = document.getElementById('cmdBeacon').value;
   var el = document.getElementById('histWrap');

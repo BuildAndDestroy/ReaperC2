@@ -31,7 +31,7 @@ ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Opera
 
 ```bash
 cd deployments/k8s/reaperc2
-chmod +x deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
+chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
 # EKS / ECR (default REAPER_CLUSTER=aws):
 ./deploy-cluster.sh check-local
 ./deploy-cluster.sh help
@@ -47,6 +47,24 @@ REAPER_CLUSTER=k3s ./deploy-cluster.sh apply-ingress
 ```
 
 `SKIP_ECR_SECRET=1 ./deploy-cluster.sh all` skips the ECR docker-registry secret on **aws**. On **k3s**, `all` skips `ecr-secret` by default; set `REAPER_ECR_SECRET=1` if you still pull from ECR. `REAPER_NS` overrides the namespace. Teardown: `./deploy-cluster.sh teardown` (respects `REAPER_CLUSTER` for the overlay).
+
+### `deploy.sh`, `reroll.sh`, and egress (NetworkPolicy)
+
+| Script | Purpose |
+|--------|---------|
+| [`deploy.sh`](deploy.sh) | Wrapper around [`deploy-cluster.sh`](deploy-cluster.sh). Use **`--no-egress`** (default path: do nothing extra) to **remove** `NetworkPolicy/reaperc2-egress-restricted` before `all` / `apply-core` so pod egress is open. Use **`--with-egress`** to **apply** [`examples/networkpolicy-egress-restricted.local.yaml`](examples/networkpolicy-egress-restricted.yaml) after `all` / `apply-core` (you must copy the template to `.local.yaml` and fix **DocumentDB CIDR**). **`teardown`** always deletes that NetworkPolicy after the main teardown. |
+| [`reroll.sh`](reroll.sh) | **`./reroll.sh`** — `rollout restart` + wait (pick up new image tag, refreshed Secrets, etc.). **`./reroll.sh --apply-secrets`** — re-apply local secrets + Operator AI file, then restart. **`./reroll.sh --refresh-ecr`** — refresh ECR pull secret, then restart (same rules as `deploy-cluster.sh ecr-secret`). |
+| [`build-push-image.sh`](build-push-image.sh) | **`./build-push-image.sh --arch amd64|arm64|both`** — runs `make` from the repo root to compile and push the ECR image (see [Build and push](#build-and-push)). |
+
+**Directions (short):**
+
+1. `cd deployments/k8s/reaperc2` and `chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh`.
+2. Copy and edit the three secret templates + `base/deployment.yaml` image + optional `../operator-ai.local.yaml` (see [Run from scratch](#run-from-scratch-checklist)).
+3. **Deploy without egress restrictions** (typical first bring-up): `./deploy.sh check-local` then **`./deploy.sh all`** or **`./deploy.sh --no-egress all`**. Then `./deploy.sh job-docdb-user`, optional `./deploy.sh job-docdb-init`, then **`./deploy.sh apply-ingress`** when Traefik + cert-manager are ready.
+4. **Deploy with egress restrictions:** copy [`examples/networkpolicy-egress-restricted.yaml`](examples/networkpolicy-egress-restricted.yaml) → `examples/networkpolicy-egress-restricted.local.yaml`, set the **DocumentDB** `ipBlock` CIDR to your VPC (or tighter), add any extra egress rules you need, then **`./deploy.sh --with-egress all`** (or `--with-egress apply-core`). **Only works if your CNI enforces NetworkPolicy** — default EKS/VPC CNI may not; use Calico/Cilium or [AWS VPC CNI network policy mode](https://docs.aws.amazon.com/eks/latest/userguide/network-policies.html) as appropriate.
+5. **Reroll** after image or secret changes: `./reroll.sh` or `./reroll.sh --apply-secrets` / `--refresh-ecr`.
+
+All other commands still go through **`./deploy-cluster.sh`** (or `./deploy.sh` forwards them unchanged).
 
 **Why ingress is separate:** `ingress.yaml` references cert-manager and Traefik; `ingressroute.yaml` needs the Traefik CRD. Applying them with the rest of the stack often blocks or confuses first-time bring-up. Apply ingress only when those dependencies exist ([Ingress troubleshooting](#ingress-traefik-cert-manager)).
 
@@ -185,6 +203,8 @@ make build
 make build IMAGE_TAG=v1.0.0
 ```
 
+**Wrapper (same directory as deploy scripts):** [`build-push-image.sh`](build-push-image.sh) — `./build-push-image.sh --arch amd64|arm64|both` plus optional `make` overrides (`IMAGE_TAG=…`, `AWS_CLI_PROFILE=…`). Aliases: `x86_64` → amd64, `aarch64` / `arm` → arm64, `multi` / `all` → both. Or set `REAPER_IMAGE_ARCH` instead of `--arch`.
+
 Requires Docker with **buildx**, the **AWS CLI**, and ECR permissions. The Makefile runs `git submodule update --init --recursive` before build so Scythe matches this repo.
 
 | Target | Purpose |
@@ -310,6 +330,10 @@ Open `http://127.0.0.1:8443` locally.
 | Path | Purpose |
 |------|---------|
 | `deploy-cluster.sh` | Install/update: `check-local`, `all`, Jobs, `apply-ingress`, `teardown-ingress`, `teardown` (`REAPER_CLUSTER=aws` or `k3s`) |
+| `deploy.sh` | Optional **`--with-egress`** / **`--no-egress`** wrapper; forwards all other subcommands to `deploy-cluster.sh` |
+| `reroll.sh` | `rollout restart` with optional **`--apply-secrets`** / **`--refresh-ecr`** |
+| `build-push-image.sh` | **`--arch amd64|arm64|both`** — runs `make build-amd64` / `build-arm64` / `build` from repo root |
+| `examples/networkpolicy-egress-restricted.yaml` | Template for egress-only NetworkPolicy (copy to `*.local.yaml`, edit CIDRs) |
 | `overlays/aws-ecr/` | Kustomize overlay: `base` + ECR `imagePullSecrets` |
 | `overlays/k3s/` | Kustomize overlay: `base` only (no registry secret patch) |
 | `base/kustomization.yaml` | `kubectl apply -k` entrypoint for **base** (included by overlays; **no** ingress) |

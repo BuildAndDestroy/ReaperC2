@@ -32,4 +32,4 @@ Lists **file artifacts**: operator-staged uploads and files **downloaded from be
 
 ## Output history
 
-Per selected beacon: stored command output from the `data` collection. **Load history** / **Refresh** via the commands page API.
+Per selected beacon: stored command output from the `data` collection (same rows for **every operator** on this engagement — not tied to who queued the command). **Load history** / **Refresh** call the commands page API; the list also **reloads when you change the beacon** in the dropdown.
