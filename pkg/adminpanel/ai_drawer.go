@@ -144,16 +144,16 @@ html[data-ai-drawer="collapsed"] .ai-drawer {
 .ai-drawer-hint { font-size: 0.78rem; line-height: 1.4; margin: 0 0 0.5rem; flex-shrink: 0; }
 .ai-drawer-model-label { margin-top: 0.25rem !important; }
 .ai-drawer-model-select {
-  width: 100%; max-width: none; margin-top: 0.25rem; flex-shrink: 0;
+  width: 100%%; max-width: none; margin-top: 0.25rem; flex-shrink: 0;
 }
 .ai-drawer-log {
   flex: 1; min-height: 8rem; max-height: none; margin: 0.65rem 0;
-  width: 100%;
+  width: 100%%;
   overflow-x: auto;
   overflow-y: auto;
 }
 .ai-drawer-prompt {
-  width: 100%; max-width: none; min-height: 4.5rem; resize: vertical; flex-shrink: 0;
+  width: 100%%; max-width: none; min-height: 4.5rem; resize: vertical; flex-shrink: 0;
 }
 .ai-drawer-actions {
   display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-shrink: 0;
@@ -161,7 +161,7 @@ html[data-ai-drawer="collapsed"] .ai-drawer {
 .ai-drawer-actions .btn { margin-top: 0; }
 .ai-drawer-status { font-size: 0.78rem; }
 .ai-drawer-reveal {
-  display: none; position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 50;
+  display: none; position: fixed; right: 0; top: 50%%; transform: translateY(-50%%); z-index: 50;
   writing-mode: vertical-rl; text-orientation: mixed;
   min-height: 7rem; padding: 0.65rem 0.4rem; margin: 0;
   border: 1px solid var(--border); border-right: none; border-radius: 6px 0 0 6px;
@@ -175,7 +175,7 @@ html[data-ai-drawer="expanded"] .toast-host {
   right: var(--ai-drawer-width);
   transition: left 0.22s ease, right 0.22s ease;
 }
-.ai-chat-line { margin-bottom: 0.85rem; max-width: 100%; }
+.ai-chat-line { margin-bottom: 0.85rem; max-width: 100%%; }
 .ai-chat-line.ai-role-user .who { color: var(--accent); }
 .ai-chat-line.ai-role-assistant .who { color: var(--ok-bright); }
 .ai-chat-line .body {
@@ -184,7 +184,7 @@ html[data-ai-drawer="expanded"] .toast-host {
   line-height: 1.45;
   font-size: 0.88rem;
   overflow-x: auto;
-  max-width: 100%;
+  max-width: 100%%;
 }
 .ai-chat-line.ai-role-assistant .body { font-family: var(--font-mono); font-size: 0.82rem; }
 .ai-chat-line.ai-thinking .body { color: var(--muted); font-style: italic; font-family: var(--font-sans); }

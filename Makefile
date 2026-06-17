@@ -40,6 +40,7 @@ help:
 	@echo "  make build-binaries   Only compile bin/linux-amd64 and bin/linux-arm64/ReaperC2"
 	@echo "  make build-amd64        Push amd64 image only"
 	@echo "  make build-arm64        Push arm64 image only"
+	@echo "  deployments/k8s/reaperc2/build-push-image.sh --arch amd64|arm64|both  (wrapper)"
 	@echo "  make vendor             go mod vendor (for build-docker)"
 	@echo ""
 	@echo "AWS: export AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, or AWS_CLI_PROFILE=my-sso"

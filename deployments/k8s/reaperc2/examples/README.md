@@ -6,6 +6,8 @@ Files here use **placeholders only**. Copy to `*.local.yaml`, edit, apply the **
 cp documentdb-secret.yaml documentdb-secret.local.yaml
 cp documentdb-admin-secret.yaml documentdb-admin-secret.local.yaml
 cp admin-bootstrap-secret.yaml admin-bootstrap-secret.local.yaml
+# Optional — egress lockdown for ReaperC2 pods (requires a CNI that enforces NetworkPolicy):
+# cp networkpolicy-egress-restricted.yaml networkpolicy-egress-restricted.local.yaml
 # Edit all .local files, then apply (see ../README.md).
 ```
 
@@ -37,6 +39,12 @@ Not used for DocumentDB. After the first operator exists, bootstrap env vars are
 See [bedrock-irsa.md](bedrock-irsa.md) and [bedrock-iam-policy.json](bedrock-iam-policy.json). Do not grant Bedrock on the EKS node group role unless you accept cluster-wide exposure.
 
 For ECR pull credentials, use the commands in `registry-secret.yaml` (no Secret manifest in git).
+
+## `networkpolicy-egress-restricted.local.yaml` (optional)
+
+Template: [`networkpolicy-egress-restricted.yaml`](networkpolicy-egress-restricted.yaml). Copy to `networkpolicy-egress-restricted.local.yaml` and **replace the DocumentDB `ipBlock` CIDR** (placeholder `10.0.0.0/8`) with a range that actually reaches your DocumentDB endpoint. Add egress rules if you need extra ports or private endpoints.
+
+Apply with **`../deploy.sh --with-egress all`** or **`../deploy.sh --with-egress apply-core`** after editing the `.local` file. Without a CNI that enforces policies, this manifest has no effect or may not behave as expected — see the **deploy.sh, reroll.sh, and egress** section in [../README.md](../README.md).
 
 ## Operator AI
 

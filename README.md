@@ -236,7 +236,7 @@ make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reape
 **Deploy to EKS after push**
 
 1. Set the image in [`deployments/k8s/reaperc2/base/deployment.yaml`](deployments/k8s/reaperc2/base/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
-2. Follow [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#quick-install-script): optional [`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh) `all`, or manually `fetch-ca`, secrets, `kubectl apply -k deployments/k8s/AWS` (legacy shim) or `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready.
+2. Follow [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#quick-install-script): run [`deployments/k8s/reaperc2/deploy.sh`](deployments/k8s/reaperc2/deploy.sh) `all` (or [`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh) `all`), optionally with **`--no-egress`** / **`--with-egress`**; or manually `fetch-ca`, secrets, `kubectl apply -k deployments/k8s/AWS` (legacy shim) or `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready. Use [`reroll.sh`](deployments/k8s/reaperc2/reroll.sh) to restart pods after image or secret changes.
 3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
 
 ### Docker build (single arch, any registry)
@@ -332,7 +332,7 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 | Path | Use when |
 |------|----------|
-| [`deployments/k8s/reaperc2/`](deployments/k8s/reaperc2/) | EKS or **k3s** + **DocumentDB** + Traefik/cert-manager ([`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh); `kubectl apply -k deployments/k8s/AWS` still works as **aws-ecr** shim) |
+| [`deployments/k8s/`](deployments/k8s/) | EKS or **k3s** + **DocumentDB** + Traefik/cert-manager ([`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh), [`deploy.sh`](deployments/k8s/reaperc2/deploy.sh), [`reroll.sh`](deployments/k8s/reaperc2/reroll.sh); quick index [`deployments/k8s/DEPLOY.md`](deployments/k8s/DEPLOY.md); `kubectl apply -k deployments/k8s/AWS` still works as **aws-ecr** shim) |
 | [`deployments/k8s/OnPrem/`](deployments/k8s/OnPrem/) | In-cluster MongoDB |
 | [`deployments/k8s/full-deployment.yaml`](deployments/k8s/full-deployment.yaml) | Sample all-in-one with in-cluster Mongo |
 
