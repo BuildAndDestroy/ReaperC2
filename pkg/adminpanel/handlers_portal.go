@@ -630,6 +630,11 @@ func (s *Server) handleTopologyPage(w http.ResponseWriter, r *http.Request) {
 <h1>Topology</h1>
 <p class="muted">Interactive <strong>graph</strong> (node–edge layout): direction follows the beacon chain toward C2. Data is JSON from <code>/api/topology</code> — not GraphQL. <strong>Blue</strong> = C2; <strong>green</strong> = on time; <strong>yellow</strong> = late; <strong>gray</strong> = offline / unknown parent.</p>
 <div class="card" id="topo-card"><p class="muted">Loading graph…</p></div>
+<div class="card beacon-presence-card" id="presence-card">
+<h2>Last phone-home</h2>
+<p class="muted" style="margin:0 0 .5rem">Time since each beacon last checked in. Colors match the graph above: <strong>green</strong> = on time; <strong>yellow</strong> = late; <strong>gray</strong> = offline / stale.</p>
+<div id="presence-body"><p class="muted">Loading…</p></div>
+</div>
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
 var __topoNetwork = null;
@@ -791,6 +796,9 @@ function renderTopology(g) {
 				return;
 			}
 			renderTopology(g);
+			if (window.__presenceReload) {
+				window.__presenceReload();
+			}
 		} catch (e) {
 			document.getElementById('topo-card').innerHTML = '<p class="muted">Failed to load topology.</p>';
 			__topoChromeReady = false;
@@ -813,6 +821,89 @@ function renderTopology(g) {
 	}
 	__topoReload = load;
 	await load();
+})();
+(function() {
+	function esc(s) {
+		return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	}
+	function presenceStatusLabel(st) {
+		if (st === 'ok') return 'On time';
+		if (st === 'late') return 'Missed interval';
+		return 'Offline / stale';
+	}
+	function presenceRowClass(st) {
+		if (st === 'ok') return 'presence-row--ok';
+		if (st === 'late') return 'presence-row--late';
+		return 'presence-row--offline';
+	}
+	function formatAgo(lastSeenISO, serverNowISO) {
+		if (!lastSeenISO) return 'Never';
+		var seen = Date.parse(lastSeenISO);
+		var now = serverNowISO ? Date.parse(serverNowISO) : Date.now();
+		if (isNaN(seen) || isNaN(now)) return '—';
+		var sec = Math.max(0, Math.floor((now - seen) / 1000));
+		if (sec < 5) return 'just now';
+		if (sec < 60) return sec + 's ago';
+		var min = Math.floor(sec / 60);
+		if (min < 60) return min + 'm ago';
+		var hr = Math.floor(min / 60);
+		min = min % 60;
+		if (hr < 24) return min ? (hr + 'h ' + min + 'm ago') : (hr + 'h ago');
+		var day = Math.floor(hr / 24);
+		hr = hr % 24;
+		return hr ? (day + 'd ' + hr + 'h ago') : (day + 'd ago');
+	}
+	function presenceSortKey(b) {
+		var rank = b.status === 'offline' ? 0 : (b.status === 'late' ? 1 : 2);
+		var age = 0;
+		if (b.last_seen_at) {
+			var t = Date.parse(b.last_seen_at);
+			if (!isNaN(t)) age = -t;
+		}
+		return rank * 1e15 + age;
+	}
+	function renderPresence(data) {
+		var body = document.getElementById('presence-body');
+		if (!body) return;
+		var beacons = (data && Array.isArray(data.beacons)) ? data.beacons.slice() : [];
+		if (!beacons.length) {
+			body.innerHTML = '<p class="muted">No beacons in this engagement yet.</p>';
+			return;
+		}
+		beacons.sort(function(a, b) { return presenceSortKey(a) - presenceSortKey(b); });
+		var rows = '';
+		for (var i = 0; i < beacons.length; i++) {
+			var b = beacons[i];
+			var st = b.status || 'offline';
+			var label = b.label && String(b.label).trim() ? b.label : b.client_id;
+			rows += '<tr class="' + presenceRowClass(st) + '">' +
+				'<td class="presence-beacon">' + esc(label) + '</td>' +
+				'<td class="presence-ago">' + esc(formatAgo(b.last_seen_at, data.server_time)) + '</td>' +
+				'<td class="presence-status">' + esc(presenceStatusLabel(st)) + '</td>' +
+				'</tr>';
+		}
+		body.innerHTML = '<table class="beacon-presence-table" aria-label="Beacon last phone-home">' +
+			'<thead><tr><th scope="col">Beacon</th><th scope="col">Since last check-in</th><th scope="col">Status</th></tr></thead>' +
+			'<tbody>' + rows + '</tbody></table>';
+	}
+	async function loadPresence() {
+		var body = document.getElementById('presence-body');
+		if (!body) return;
+		try {
+			var r = await fetch('/api/beacon-presence', { credentials: 'same-origin' });
+			var data = await r.json();
+			if (!r.ok) {
+				body.innerHTML = '<p class="muted">' + esc((data && data.error) || r.statusText || 'Failed to load') + '</p>';
+				return;
+			}
+			renderPresence(data);
+		} catch (e) {
+			body.innerHTML = '<p class="muted">Failed to load beacon presence.</p>';
+		}
+	}
+	window.__presenceReload = loadPresence;
+	loadPresence();
+	setInterval(loadPresence, 5000);
 })();
 </script>`
 	s.writeAppPage(w, user, role, "topology", "Topology", body, eng)
