@@ -103,7 +103,7 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `
 <h1>Engagements</h1>
-<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, and (for administrators) <strong>assigned operators</strong>. General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> while a workspace is active. Closed engagements appear under <strong>Archived engagements</strong>; a closed workspace still shows a <span class="eng-st-closed">Closed</span> pill in the top bar.</p>
+<p class="muted">Each engagement scopes <strong>Beacons</strong>, <strong>Commands</strong>, <strong>Reports</strong>, <strong>Topology</strong>, <strong>Notes &amp; ATT&amp;CK</strong>, and <strong>Chat</strong>. Use <strong>Workspace</strong> to select it for operator pages. <strong>Manage</strong> sets status, haul type, <strong>Slack / Discord room</strong> (chat key), calendar <strong>start/end</strong> (administrators), <strong>engagement name</strong> (administrators), and <strong>assigned operators</strong> (administrators). General and MITRE notes are under <strong>Notes &amp; ATT&amp;CK</strong> while a workspace is active. Closed engagements appear under <strong>Archived engagements</strong>; a closed workspace still shows a <span class="eng-st-closed">Closed</span> pill in the top bar.</p>
 
 <nav class="eng-top-nav" aria-label="Engagement views" role="tablist">
   <button type="button" class="eng-tab eng-tab-active" data-eng-tab="open">Your engagements</button>
@@ -168,6 +168,14 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
 <dialog id="engManageDlg" class="eng-manage-dialog">
   <h2>Manage engagement</h2>
   <p id="engDlgSubtitle" class="muted" style="margin:.35rem 0 .75rem"></p>
+  <label for="engDlgName">Engagement name</label>
+  <input id="engDlgName" placeholder="Assessment name" autocomplete="off">
+  <p id="engDlgNameHint" class="muted" style="font-size:.78rem;margin:.25rem 0 .5rem;display:none">Only administrators can rename an engagement.</p>
+  <label for="engDlgStart">Start date</label>
+  <input id="engDlgStart" type="date">
+  <label for="engDlgEnd">End date</label>
+  <input id="engDlgEnd" type="date">
+  <p id="engDlgDateHint" class="muted" style="font-size:.78rem;margin:.25rem 0 .65rem;display:none">Only administrators can change dates.</p>
   <label for="engDlgStatus">Status</label>
   <select id="engDlgStatus">
     <option value="open">Open</option>
@@ -179,6 +187,9 @@ func (s *Server) handleEngagementsPage(w http.ResponseWriter, r *http.Request) {
     <option value="short_haul">Short Haul</option>
     <option value="long_haul">Long Haul</option>
   </select>
+  <label for="engDlgRoom">Slack / Discord room name</label>
+  <input id="engDlgRoom" placeholder="e.g. #acme-2026-ops — used as operator chat room key" autocomplete="off">
+  <p class="muted" style="font-size:.78rem;margin:.25rem 0 .65rem;line-height:1.35">Shown here so you can align the room with the customer thread; changing it affects new chat sessions for this engagement.</p>
   <p class="muted" style="font-size:.82rem;margin:.75rem 0 0;line-height:1.4">General notes and MITRE ATT&amp;CK (tactic narrative, Navigator export, technique tags) are on <strong>Notes &amp; ATT&amp;CK</strong> in the left nav while this engagement is the active workspace.</p>
   <div id="engDlgOpsSection" style="display:none;margin-top:.75rem">
     <label>Assigned operators</label>
@@ -262,10 +273,22 @@ function wireEngagementRowButtons(root) {
       var j = await r.json().catch(function() { return {}; });
       if (!r.ok) { alert((j && j.error) ? j.error : r.statusText); return; }
       document.getElementById('engDlgSubtitle').textContent = (j.name || '') + ' · ' + (j.client_name || '');
+      document.getElementById('engDlgName').value = (j.name || '');
+      document.getElementById('engDlgStart').value = fmtEngDay(j.start_date);
+      document.getElementById('engDlgEnd').value = fmtEngDay(j.end_date);
+      var adm = !!window.__REAPER_IS_ADMIN__;
+      document.getElementById('engDlgName').readOnly = !adm;
+      document.getElementById('engDlgStart').readOnly = !adm;
+      document.getElementById('engDlgEnd').readOnly = !adm;
+      var nh = document.getElementById('engDlgNameHint');
+      var dh = document.getElementById('engDlgDateHint');
+      if (nh) nh.style.display = adm ? 'none' : 'block';
+      if (dh) dh.style.display = adm ? 'none' : 'block';
       document.getElementById('engDlgStatus').value = (j.status === 'closed') ? 'closed' : 'open';
       var haul = j.haul_type || 'interactive';
       if (haul !== 'short_haul' && haul !== 'long_haul') haul = 'interactive';
       document.getElementById('engDlgHaul').value = haul;
+      document.getElementById('engDlgRoom').value = (j.slack_discord_room != null && j.slack_discord_room !== undefined) ? String(j.slack_discord_room) : '';
       buildEngDlgOps(j);
       if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
     };
@@ -398,8 +421,14 @@ document.getElementById('engDlgSave').onclick = async function() {
   msg.textContent = 'Saving…';
   var body = {
     status: document.getElementById('engDlgStatus').value,
-    haul_type: document.getElementById('engDlgHaul').value
+    haul_type: document.getElementById('engDlgHaul').value,
+    slack_discord_room: document.getElementById('engDlgRoom').value.trim()
   };
+  if (window.__REAPER_IS_ADMIN__) {
+    body.name = document.getElementById('engDlgName').value.trim();
+    body.start_date = document.getElementById('engDlgStart').value;
+    body.end_date = document.getElementById('engDlgEnd').value;
+  }
   if (window.__REAPER_IS_ADMIN__) {
     var aops = [];
     document.querySelectorAll('#engDlgOpChecks input[type=checkbox]:checked').forEach(function(c) { aops.push(c.value); });
@@ -734,12 +763,16 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(engagementAPIMap(e))
 	case http.MethodPatch:
 		var req struct {
-			Status            *string                     `json:"status"`
-			Notes             *string                     `json:"notes"`
-			AttackTacticNotes *map[string]string          `json:"attack_tactic_notes"`
-			AttackTechniques  *[]mitreattack.TechniqueTag `json:"attack_techniques"`
-			HaulType          *string                     `json:"haul_type"`
-			AssignedOperators *[]string                   `json:"assigned_operators"`
+			Status             *string                     `json:"status"`
+			Name               *string                     `json:"name"`
+			StartDate          *string                     `json:"start_date"`
+			EndDate            *string                     `json:"end_date"`
+			Notes              *string                     `json:"notes"`
+			AttackTacticNotes  *map[string]string          `json:"attack_tactic_notes"`
+			AttackTechniques   *[]mitreattack.TechniqueTag `json:"attack_techniques"`
+			HaulType           *string                     `json:"haul_type"`
+			SlackDiscordRoom   *string                     `json:"slack_discord_room"`
+			AssignedOperators  *[]string                   `json:"assigned_operators"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, http.StatusBadRequest, "invalid json")
@@ -771,6 +804,64 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 			h := strings.TrimSpace(*req.HaulType)
 			patch.HaulType = &h
 		}
+		if req.SlackDiscordRoom != nil {
+			s := strings.TrimSpace(*req.SlackDiscordRoom)
+			patch.SlackDiscordRoom = &s
+		}
+		if req.Name != nil || req.StartDate != nil || req.EndDate != nil {
+			if !isAdmin(role) {
+				jsonError(w, http.StatusForbidden, "only administrators can change engagement name or start/end dates")
+				return
+			}
+		}
+		if req.Name != nil {
+			n := strings.TrimSpace(*req.Name)
+			patch.Name = &n
+		}
+		hasStart := req.StartDate != nil
+		hasEnd := req.EndDate != nil
+		if hasStart || hasEnd {
+			startT := e.StartDate
+			endT := e.EndDate
+			if hasStart {
+				sd := strings.TrimSpace(*req.StartDate)
+				if sd == "" {
+					jsonError(w, http.StatusBadRequest, "start_date cannot be empty")
+					return
+				}
+				st, err := parseEngagementDate(sd)
+				if err != nil {
+					jsonError(w, http.StatusBadRequest, "invalid start_date")
+					return
+				}
+				startT = st
+			}
+			if hasEnd {
+				ed := strings.TrimSpace(*req.EndDate)
+				if ed == "" {
+					jsonError(w, http.StatusBadRequest, "end_date cannot be empty")
+					return
+				}
+				en, err := parseEngagementDate(ed)
+				if err != nil {
+					jsonError(w, http.StatusBadRequest, "invalid end_date")
+					return
+				}
+				endT = en
+			}
+			if endT.Before(startT) {
+				jsonError(w, http.StatusBadRequest, "end_date must be on or after start_date")
+				return
+			}
+			if hasStart {
+				ts := startT
+				patch.StartDate = &ts
+			}
+			if hasEnd {
+				te := endT
+				patch.EndDate = &te
+			}
+		}
 		if req.AssignedOperators != nil {
 			if !isAdmin(role) {
 				jsonError(w, http.StatusForbidden, "only administrators can change assigned operators")
@@ -778,7 +869,7 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 			}
 			patch.AssignedOperators = req.AssignedOperators
 		}
-		if patch.Status == nil && patch.Notes == nil && patch.AttackTacticNotes == nil && patch.AttackTechniques == nil && patch.HaulType == nil && patch.AssignedOperators == nil {
+		if patch.Status == nil && patch.Notes == nil && patch.AttackTacticNotes == nil && patch.AttackTechniques == nil && patch.HaulType == nil && patch.SlackDiscordRoom == nil && patch.AssignedOperators == nil && patch.Name == nil && patch.StartDate == nil && patch.EndDate == nil {
 			jsonError(w, http.StatusBadRequest, "no changes")
 			return
 		}
@@ -792,7 +883,9 @@ func (s *Server) handleAPIEngagementByID(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			if strings.Contains(err.Error(), "invalid engagement status") || strings.Contains(err.Error(), "invalid haul_type") ||
-				strings.Contains(err.Error(), "unknown operator") || strings.Contains(err.Error(), "is disabled") {
+				strings.Contains(err.Error(), "unknown operator") || strings.Contains(err.Error(), "is disabled") ||
+				strings.Contains(err.Error(), "engagement name") ||
+				strings.Contains(err.Error(), "slack_discord_room") {
 				jsonError(w, http.StatusBadRequest, err.Error())
 				return
 			}

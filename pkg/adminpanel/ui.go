@@ -305,6 +305,17 @@ details.beacon-run-host li code {
 .topo-edge { color: var(--muted); font-size: .75rem; margin: .25rem 0; }
 .topo-graph-canvas { width: 100%; height: min(70vh, 520px); min-height: 360px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--border); }
 p.topo-graph-hint { margin: .65rem 0 0; font-size: .82rem; }
+.beacon-presence-card h2 { margin: 0 0 .35rem; font-size: 1.05rem; color: var(--text); font-weight: 600; }
+.beacon-presence-table { margin-top: .5rem; }
+.beacon-presence-table .presence-beacon { font-weight: 600; }
+.beacon-presence-table tr.presence-row--ok .presence-beacon { color: var(--ok-bright); }
+.beacon-presence-table tr.presence-row--late .presence-beacon { color: var(--warn); }
+.beacon-presence-table tr.presence-row--offline .presence-beacon { color: var(--muted); }
+.beacon-presence-table tr.presence-row--ok td:first-child { border-left: 3px solid var(--ok-bright); }
+.beacon-presence-table tr.presence-row--late td:first-child { border-left: 3px solid var(--warn); }
+.beacon-presence-table tr.presence-row--offline td:first-child { border-left: 3px solid var(--border); }
+.beacon-presence-table .presence-ago { font-family: var(--font-mono); font-size: .85rem; }
+.beacon-presence-table .presence-status { font-size: .82rem; color: var(--muted); }
 .chat-log { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: .75rem; background: var(--input-bg); }
 .chat-line { margin: .35rem 0; font-size: .9rem; }
 .chat-line .who { color: var(--accent); font-weight: 600; }

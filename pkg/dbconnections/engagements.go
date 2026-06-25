@@ -55,6 +55,12 @@ func EngagementHaulTypeLabel(key string) string {
 
 const collectionEngagements = "engagements"
 
+// maxEngagementTitleRunes caps engagement display name length (PATCH / storage).
+const maxEngagementTitleRunes = 512
+
+// maxSlackDiscordRoomRunes caps Slack/Discord room label stored on engagements.
+const maxSlackDiscordRoomRunes = 500
+
 // EngagementsCollection stores operator-facing engagement records.
 var EngagementsCollection *mongo.Collection
 
@@ -344,6 +350,10 @@ func EngagementIsOpen(e *Engagement) bool {
 // EngagementPatch is a partial update for engagements.
 type EngagementPatch struct {
 	Status            *string                     // "open" | "closed", or nil to skip
+	Name              *string                     // nil = skip; non-empty trimmed name
+	StartDate         *time.Time                  // nil = skip
+	EndDate           *time.Time                  // nil = skip
+	SlackDiscordRoom  *string                     // nil = skip; empty string clears
 	Notes             *string                     // nil = skip; empty string clears notes
 	AttackTacticNotes *map[string]string          // nil = skip; empty map clears tactic notes
 	AttackTechniques  *[]mitreattack.TechniqueTag // nil = skip; empty slice clears technique tags
@@ -397,6 +407,29 @@ func UpdateEngagement(ctx context.Context, idHex string, patch EngagementPatch) 
 			return fmt.Errorf("invalid haul_type %q (use interactive, short_haul, or long_haul)", *patch.HaulType)
 		}
 		set["haul_type"] = h
+	}
+	if patch.Name != nil {
+		n := strings.TrimSpace(*patch.Name)
+		if n == "" {
+			return fmt.Errorf("engagement name cannot be empty")
+		}
+		if utf8.RuneCountInString(n) > maxEngagementTitleRunes {
+			return fmt.Errorf("engagement name too long (max %d characters)", maxEngagementTitleRunes)
+		}
+		set["name"] = n
+	}
+	if patch.StartDate != nil {
+		set["start_date"] = patch.StartDate.UTC()
+	}
+	if patch.EndDate != nil {
+		set["end_date"] = patch.EndDate.UTC()
+	}
+	if patch.SlackDiscordRoom != nil {
+		s := strings.TrimSpace(*patch.SlackDiscordRoom)
+		if utf8.RuneCountInString(s) > maxSlackDiscordRoomRunes {
+			return fmt.Errorf("slack_discord_room too long (max %d characters)", maxSlackDiscordRoomRunes)
+		}
+		set["slack_discord_room"] = s
 	}
 	if patch.AssignedOperators != nil {
 		norm := NormalizeAssignedOperatorList(*patch.AssignedOperators)
