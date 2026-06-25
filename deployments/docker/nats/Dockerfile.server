@@ -1,8 +1,0 @@
-# NATS broker (nats-server). Other containers reach it as nats://nats:4222 when
-# the Compose/Kubernetes service name is `nats`.
-FROM nats:2-alpine
-
-EXPOSE 4222 6222 8222
-
-# Inherits default CMD from the official image (runs nats-server).
-# Enable JetStream for durable streams: add `-js` or a config file mount.
