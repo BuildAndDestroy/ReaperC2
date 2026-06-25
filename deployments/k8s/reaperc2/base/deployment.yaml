@@ -17,7 +17,7 @@ spec:
       serviceAccountName: reaperc2
       containers:
         - name: reaperc2-deployment
-          image: 235360402887.dkr.ecr.us-east-1.amazonaws.com/reaperc2:bd3448c
+          image: registry.reaper-ut.com/reaperc2:latest
           resources:
             limits:
               cpu: "1"
