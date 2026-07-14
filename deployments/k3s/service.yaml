@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: reaperc2-service
+  namespace: reaperc2-ns
+spec:
+  type: ClusterIP
+  selector:
+    app: reaperc2-deployment
+  ports:
+    - name: beacon
+      port: 8080
+      targetPort: 8080
+    - name: admin
+      port: 8443
+      targetPort: 8443

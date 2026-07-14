@@ -1,8 +1,21 @@
 # Deploy ReaperC2 on Kubernetes (quick pointer)
 
-The supported path is **`deployments/k8s/reaperc2/`** with **DocumentDB**, Traefik, and cert-manager.
+## Choose a layout
 
-## Read this first
+| Layout | Directory |
+|--------|-----------|
+| **DocumentDB** (EKS or k3s) | [`reaperc2/`](reaperc2/) |
+| **OnPrem** NFS Mongo + Ollama (k3s homelab / Pi) | [`../k3s/`](../k3s/) |
+
+See [`../README.md`](../README.md) for the full comparison.
+
+---
+
+## DocumentDB (`reaperc2/`)
+
+Supported path: **DocumentDB**, Traefik, cert-manager, Bedrock Operator AI.
+
+## Read this first (DocumentDB)
 
 - **[reaperc2/README.md](reaperc2/README.md)** — full checklist, DocumentDB pitfalls, ingress order, troubleshooting.
 - **[reaperc2/examples/README.md](reaperc2/examples/README.md)** — copying secret templates to `*.local.yaml`.

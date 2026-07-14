@@ -16,3 +16,7 @@
 # Local Go build artifacts (modules resolve via go.mod; vendor only if you explicitly vendor)
 /vendor/
 /bin/
+
+# k3s / OnPrem deploy local config (see deployments/README.md)
+deployments/k3s/config.env
+deployments/config.env
