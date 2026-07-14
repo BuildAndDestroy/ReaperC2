@@ -28,7 +28,7 @@ data:
   REAPER_AI_ENABLED: "1"
   REAPER_AI_DEFAULT_MODEL: "auto"
   REAPER_AI_DEFAULT_PROVIDER: "bedrock"
-  REAPER_AI_MAX_TOKENS: "2048"
+  REAPER_AI_MAX_TOKENS: "8192"
 
   # Optional unified catalog (foundry:/bedrock:/openai: prefixes). Discovery still adds live models.
   # REAPER_AI_MODELS: "bedrock:global.anthropic.claude-fable-5,foundry:YOUR_DEPLOYMENT,openai:gpt-4o-mini,ollama:llama3.2:latest"
