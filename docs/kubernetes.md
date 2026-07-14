@@ -64,8 +64,8 @@ REAPER_CLUSTER=k3s ./deploy-cluster.sh all    # or default aws for EKS
 
 ## Operator AI (multi-model)
 
-- [`deployments/k8s/operator-ai.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/operator-ai.yaml) — template; copy to `operator-ai.local.yaml` for secrets.
-- **In-cluster Ollama (OnPrem):** [`deployments/k8s/ollama.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/ollama.yaml) + enable Ollama keys in `operator-ai.local.yaml`, or `deployments/k3s/scripts/deploy.sh`.
+- [`deployments/k8s/operator-ai.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/operator-ai.yaml) — template with **Ollama enabled by default**; copy to `operator-ai.local.yaml` for secrets.
+- **In-cluster Ollama:** [`deployments/k8s/ollama.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/ollama.yaml) — applied by `./deploy-cluster.sh apply-ollama` / `all`, or `deployments/k3s/scripts/deploy.sh`. Skip with `SKIP_OLLAMA=1`.
 
 See [Operator AI](/documentation/operator-guide-ai) for variable details.
 

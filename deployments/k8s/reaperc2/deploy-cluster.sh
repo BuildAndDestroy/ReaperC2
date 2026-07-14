@@ -41,6 +41,7 @@ Commands:
   preflight         Check kubectl context, local files (warnings), Traefik IngressClass, optional CRDs.
   fetch-ca          Run base/fetch-docdb-ca-bundle.sh (required before apply-core). Does not require *.local.yaml.
   apply-secrets     Apply namespace + all three examples/*.local.yaml + ../operator-ai.local.yaml (if present). Validates required files first (see check-local).
+  apply-ollama      Apply ../ollama.yaml (in-cluster Ollama for Operator AI). Skipped if SKIP_OLLAMA=1.
   ecr-secret        Create/update reaperc2-myregistrykey (aws profile; validates required files first).
   apply-core        kubectl apply -k <overlay>  (app + SA + service; no ingress). Validates required files first.
   apply-ingress     Apply ingress.yaml + ingressroute.yaml (validates required files first).
@@ -49,8 +50,8 @@ Commands:
   job-docdb-user    Re-run docdb-init-user job (validates required files first).
   job-docdb-init    Re-run docdb-init job (validates required files first).
   status            Pods, deployment, services.
-  all               Require local prereqs, then preflight, fetch-ca, apply-secrets, ecr-secret (aws only unless forced), apply-core, rollout (then prints next steps).
-  teardown          Remove app from cluster (same as README Teardown): kustomize stack, ingress, jobs, sample secret apply, ollama leftovers. Does not delete the namespace or DocumentDB.
+  all               Require local prereqs, then preflight, fetch-ca, apply-ollama, apply-secrets, ecr-secret (aws only unless forced), apply-core, rollout (then prints next steps).
+  teardown          Remove app from cluster (same as README Teardown): kustomize stack, ingress, jobs, sample secret apply, ollama stack. Does not delete the namespace or DocumentDB.
 
 Environment:
   REAPER_CLUSTER         aws (default) or k3s — picks Kustomize overlay and ECR checks.
@@ -59,6 +60,7 @@ Environment:
   AWS_REGION             ECR region for aws ecr get-login-password (optional if derivable from deployment image)
   SKIP_ECR_SECRET        Set to 1 to skip ecr-secret in "all" (aws). On k3s, ecr-secret is skipped unless REAPER_ECR_SECRET=1.
   REAPER_ECR_SECRET      Set to 1 on k3s to run ecr-secret in "all" (same as aws flow).
+  SKIP_OLLAMA            Set to 1 to skip in-cluster Ollama on apply-ollama / all (Operator AI can still use cloud providers).
 
 Note: teardown does not remove Operator AI objects; use kubectl delete -f ../operator-ai.local.yaml if needed.
 EOF
@@ -110,6 +112,21 @@ cmd_fetch_ca() {
   (cd "$BASE" && ./fetch-docdb-ca-bundle.sh)
 }
 
+cmd_apply_ollama() {
+  if [[ "${SKIP_OLLAMA:-0}" == "1" ]]; then
+    info "Skipping Ollama (SKIP_OLLAMA=1)"
+    return 0
+  fi
+  local ollama_yaml="$HERE/../ollama.yaml"
+  [[ -f "$ollama_yaml" ]] || die "missing $ollama_yaml"
+  info "Applying in-cluster Ollama ($ollama_yaml)"
+  "$KUBECTL" apply -f "$ollama_yaml"
+  "$KUBECTL" -n ollama-ns wait --for=jsonpath='{.status.phase}'=Bound pvc/ollama-data --timeout=180s || \
+    echo "warn: ollama-data PVC not Bound yet (check StorageClass / capacity)"
+  "$KUBECTL" -n ollama-ns rollout status deploy/ollama --timeout=900s || \
+    echo "warn: Ollama Deployment not Ready yet (first model pull can take several minutes)"
+}
+
 cmd_apply_secrets() {
   require_deploy_prereqs
   "$KUBECTL" apply -f "$BASE/namespace.yaml"
@@ -124,7 +141,8 @@ cmd_apply_secrets() {
     info "Applying ../operator-ai.local.yaml"
     "$KUBECTL" apply -f "$HERE/../operator-ai.local.yaml"
   else
-    echo "warn: ../operator-ai.local.yaml not found — Operator AI env not updated (copy from ../operator-ai.yaml)."
+    echo "warn: ../operator-ai.local.yaml not found — applying ../operator-ai.yaml (template; Ollama enabled; replace CHANGE_ME keys)."
+    "$KUBECTL" apply -f "$HERE/../operator-ai.yaml"
   fi
 }
 
@@ -257,6 +275,7 @@ cmd_job_docdb_init() {
 cmd_status() {
   "$KUBECTL" get pods,svc,deploy -n "$REAPER_NS"
   "$KUBECTL" get ingress,ingressroute -n "$REAPER_NS" 2>/dev/null || true
+  "$KUBECTL" get pods,svc,pvc -n ollama-ns 2>/dev/null || true
 }
 
 cmd_teardown_ingress() {
@@ -302,6 +321,9 @@ cmd_teardown() {
     echo "warn: $HERE/examples/documentdb-secret.local.yaml missing — skip deleting that Secret (delete manually if applied)"
   fi
   "$KUBECTL" delete -f "$BASE/docdb-init-job.yaml" -f "$BASE/docdb-init-user-job.yaml" --ignore-not-found
+  if [[ -f "$HERE/../ollama.yaml" ]]; then
+    "$KUBECTL" delete -f "$HERE/../ollama.yaml" --ignore-not-found
+  fi
   "$KUBECTL" delete deployment/ollama service/ollama pvc/ollama-data -n "$REAPER_NS" --ignore-not-found
   info "Done. Namespace $REAPER_NS and other Secrets (admin bootstrap, ECR pull, Operator AI) may still exist — delete manually if needed."
 }
@@ -310,6 +332,7 @@ cmd_all() {
   require_deploy_prereqs
   cmd_preflight
   cmd_fetch_ca
+  cmd_apply_ollama
   cmd_apply_secrets
   local skip_ecr="${SKIP_ECR_SECRET:-0}"
   if [[ "${REAPER_CLUSTER}" == "k3s" && "${REAPER_ECR_SECRET:-0}" != "1" ]]; then
@@ -329,6 +352,7 @@ Next steps (see README):
   2) Collections / indexes (optional):  REAPER_CLUSTER=${REAPER_CLUSTER} ./deploy-cluster.sh job-docdb-init
   3) When Traefik + cert-manager + IngressRoute CRD are ready:  REAPER_CLUSTER=${REAPER_CLUSTER} ./deploy-cluster.sh apply-ingress
   4) Admin UI:  kubectl port-forward -n $REAPER_NS deployment/reaperc2-deployment 8443:8443
+  5) Ollama: kubectl -n ollama-ns get pods   (models pull on first start; Operator AI uses http://ollama.ollama-ns.svc.cluster.local:11434/v1)
 EOF
 }
 
@@ -341,6 +365,7 @@ main() {
     preflight) cmd_preflight ;;
     fetch-ca) cmd_fetch_ca ;;
     apply-secrets) cmd_apply_secrets ;;
+    apply-ollama) cmd_apply_ollama ;;
     ecr-secret) cmd_ecr_secret ;;
     apply-core) cmd_apply_core ;;
     apply-ingress) cmd_apply_ingress ;;

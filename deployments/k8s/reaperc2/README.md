@@ -23,7 +23,7 @@ These caused most deploy pain — avoid them up front:
 | **`docdb-init` Job errors** | Run `./deploy-cluster.sh apply-core` first (refreshes SCRAM-SHA-1 scripts), then re-apply the Job. |
 | **App still uses wrong auth DB** | `base/deployment.yaml` reads `auth_source` from the secret. After editing the secret: `kubectl apply -f base/deployment.yaml` and rollout restart. |
 
-ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Operator AI uses Bedrock (see [Bedrock credentials](#bedrock-credentials-rotation)), not in-cluster Ollama.
+ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Operator AI includes **in-cluster Ollama** by default ([`../ollama.yaml`](../ollama.yaml); applied by `./deploy-cluster.sh apply-ollama` / `all`) plus optional Bedrock and other cloud providers (see [Bedrock credentials](#bedrock-credentials-rotation)). Skip Ollama with `SKIP_OLLAMA=1` if the node cannot host models.
 
 ## Quick install (script)
 
@@ -240,7 +240,7 @@ Use the [checklist](#run-from-scratch-checklist) order. Notes:
 
 `./deploy-cluster.sh apply-core` applies the ReaperC2 Deployment, ServiceAccount, Service, and DocumentDB-related ConfigMaps (CA bundle + init scripts). It does **not** apply `ingress.yaml` / `ingressroute.yaml` — use [`./deploy-cluster.sh apply-ingress`](deploy-cluster.sh) or `kubectl apply -f ingress.yaml -f ingressroute.yaml -n reaperc2-ns` after Traefik (and cert-manager, if you use ACME annotations) are ready.
 
-**Operator AI:** copy [`../operator-ai.yaml`](../operator-ai.yaml) → `../operator-ai.local.yaml`, set ConfigMap (Bedrock region, Foundry URL, **Azure deployment names**) and Secret (API keys). Apply the **`.local`** file only:
+**Operator AI:** copy [`../operator-ai.yaml`](../operator-ai.yaml) → `../operator-ai.local.yaml`, set ConfigMap (Bedrock region, Foundry URL, **Azure deployment names**) and Secret (API keys). Ollama is **enabled by default** in the template and talks to `http://ollama.ollama-ns.svc.cluster.local:11434/v1` after `./deploy-cluster.sh apply-ollama` (or `all`). Apply the **`.local`** file only:
 
 ```bash
 kubectl apply -f ../operator-ai.local.yaml
@@ -304,10 +304,11 @@ Step-by-step IRSA setup: [`examples/bedrock-irsa.md`](examples/bedrock-irsa.md).
 
 **Troubleshooting — `AccessDeniedException` on `bedrock:InvokeModel` with the EKS *node group* role in the error:** the pod is using the **node instance profile**, not IRSA. Fix: create the Bedrock policy + `eksctl create iamserviceaccount` (or annotate `serviceaccount.yaml` with `eks.amazonaws.com/role-arn`), ensure `REAPER_AI_BEDROCK_USE_IAM=1`, rollout restart, and confirm `AWS_ROLE_ARN` is set in the pod. Alternatively, put a Bedrock API key in `reaperc2-ai-secrets` (see [`operator-ai.yaml`](../operator-ai.yaml)).
 
-If you previously deployed in-cluster Ollama, remove leftovers:
+To remove a legacy Ollama Deployment that lived in `reaperc2-ns` (current stack uses `ollama-ns` via `../ollama.yaml`):
 
 ```bash
 kubectl delete deployment/ollama service/ollama pvc/ollama-data -n reaperc2-ns --ignore-not-found
+kubectl delete -f ../ollama.yaml --ignore-not-found
 ```
 
 ### 5. Verify
@@ -338,7 +339,8 @@ Open `http://127.0.0.1:8443` locally.
 | `overlays/k3s/` | Kustomize overlay: `base` only (no registry secret patch) |
 | `base/kustomization.yaml` | `kubectl apply -k` entrypoint for **base** (included by overlays; **no** ingress) |
 | `base/namespace.yaml` | `reaperc2-ns` |
-| [`../operator-ai.yaml`](../operator-ai.yaml) | Operator AI template (ConfigMap + Secret); apply `operator-ai.local.yaml` |
+| [`../operator-ai.yaml`](../operator-ai.yaml) | Operator AI template (ConfigMap + Secret; Ollama enabled by default); apply `operator-ai.local.yaml` |
+| [`../ollama.yaml`](../ollama.yaml) | In-cluster Ollama (`ollama-ns`); `./deploy-cluster.sh apply-ollama` |
 | `base/deployment.yaml` | ReaperC2 + DocumentDB env + CA volume |
 | `base/service.yaml` | ClusterIP :8080 (beacon) |
 | `ingress.yaml` | Standard Ingress for Traefik / cert-manager (**apply after** Traefik + cert-manager) |
@@ -413,7 +415,7 @@ If you used cert-manager ACME on that ingress, also `kubectl get certificate,cer
 
 ## Teardown (app only)
 
-Removes the ReaperC2 workload, ingress, DocumentDB app secret (if the `.local.yaml` file exists), init Jobs, and legacy Ollama objects. It does **not** delete the namespace, DocumentDB itself, admin/bootstrap secrets, ECR pull secret, or Operator AI — remove those with `kubectl delete` if you want a clean namespace.
+Removes the ReaperC2 workload, ingress, DocumentDB app secret (if the `.local.yaml` file exists), init Jobs, and in-cluster Ollama (`../ollama.yaml`). It does **not** delete the namespace, DocumentDB itself, admin/bootstrap secrets, ECR pull secret, or Operator AI — remove those with `kubectl delete` if you want a clean namespace.
 
 ```bash
 cd deployments/k8s/reaperc2
@@ -428,5 +430,6 @@ kubectl delete -k overlays/aws-ecr --ignore-not-found
 kubectl delete -f ingress.yaml -f ingressroute.yaml -n reaperc2-ns --ignore-not-found
 kubectl delete -f examples/documentdb-secret.local.yaml --ignore-not-found
 kubectl delete -f base/docdb-init-job.yaml -f base/docdb-init-user-job.yaml --ignore-not-found
+kubectl delete -f ../ollama.yaml --ignore-not-found
 kubectl delete deployment/ollama service/ollama pvc/ollama-data -n reaperc2-ns --ignore-not-found
 ```

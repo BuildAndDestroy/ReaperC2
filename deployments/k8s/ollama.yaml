@@ -21,7 +21,8 @@ metadata:
   namespace: ollama-ns
 data:
   # Comma-separated tags pulled on first pod start (empty = skip init pull).
-  OLLAMA_PULL_MODELS: "llama3.2:latest"
+  # Keep in sync with REAPER_AI_OLLAMA_MODELS in operator-ai.yaml when possible.
+  OLLAMA_PULL_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

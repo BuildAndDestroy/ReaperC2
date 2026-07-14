@@ -15,9 +15,9 @@
 # Deployment must reference reaperc2-ai-config and reaperc2-ai-secrets via envFrom
 # (see deployments/k8s/reaperc2/base/deployment.yaml).
 #
-# In-cluster Ollama (k8s / k3s OnPrem): apply deployments/k8s/ollama.yaml first, then enable the Ollama
-# keys below with REAPER_AI_OLLAMA_API_URL=http://ollama.ollama-ns.svc.cluster.local:11434/v1
-# Or use deployments/k3s/scripts/deploy.sh for NFS Mongo + Ollama + ReaperC2 together.
+# In-cluster Ollama is enabled by default (see REAPER_AI_OLLAMA_* below). Deploy the Service with:
+#   kubectl apply -f deployments/k8s/ollama.yaml
+# Or use deploy-cluster.sh apply-ollama / all (and deployments/k3s/scripts/deploy.sh for OnPrem NFS).
 
 apiVersion: v1
 kind: ConfigMap
@@ -59,13 +59,13 @@ data:
   REAPER_AI_BEDROCK_MODELS: "global.anthropic.claude-fable-5,us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,amazon.nova-lite-v1:0"
   # REAPER_AI_BEDROCK_MODEL: "us.anthropic.claude-opus-4-7"
 
-  # --- Ollama (optional — in-cluster or host) ---
-  # In-cluster: kubectl apply -f deployments/k8s/ollama.yaml first
-  # REAPER_AI_OLLAMA_ENABLED: "1"
-  # REAPER_AI_OLLAMA_DISCOVER: "1"
-  # REAPER_AI_OLLAMA_API_URL: "http://ollama.ollama-ns.svc.cluster.local:11434/v1"
-  # REAPER_AI_OLLAMA_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest"
-  # Host / Docker Compose only (not in-cluster):
+  # --- Ollama (in-cluster by default; apply deployments/k8s/ollama.yaml) ---
+  REAPER_AI_OLLAMA_ENABLED: "1"
+  REAPER_AI_OLLAMA_DISCOVER: "1"
+  REAPER_AI_OLLAMA_API_URL: "http://ollama.ollama-ns.svc.cluster.local:11434/v1"
+  # Comma-separated extras merged with live discovery from GET /api/tags:
+  REAPER_AI_OLLAMA_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest"
+  # Host / Docker Compose only (replace API URL above):
   # REAPER_AI_OLLAMA_API_URL: "http://host.docker.internal:11434/v1"
 ---
 apiVersion: v1

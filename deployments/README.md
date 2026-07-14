@@ -54,8 +54,8 @@ Edit [`k3s/mongo-secret.yaml`](k3s/mongo-secret.yaml) before first deploy (`root
 | Concern | Variable / file |
 |---------|-----------------|
 | Dropdown models (comma-separated per provider) | `REAPER_AI_OPENAI_MODELS`, `REAPER_AI_ANTHROPIC_MODELS`, `REAPER_AI_OLLAMA_MODELS`, … |
-| In-cluster Ollama | Apply [`k8s/ollama.yaml`](k8s/ollama.yaml); set `REAPER_AI_OLLAMA_API_URL=http://ollama.ollama-ns.svc.cluster.local:11434/v1` |
-| Pull models into Ollama | `OLLAMA_PULL_MODELS` in `k3s/config.env` |
+| In-cluster Ollama (default) | Applied via `k8s/ollama.yaml`; `REAPER_AI_OLLAMA_*` enabled in `operator-ai.yaml` |
+| Pull models into Ollama | `OLLAMA_PULL_MODELS` in `ollama.yaml` ConfigMap (or `k3s/config.env`) |
 
 Full variable list: [docs/operator-guide-ai.md](../docs/operator-guide-ai.md).
 
