@@ -1,0 +1,76 @@
+# ReaperC2 for k3s (ARM64/x86). Image from k3s/config.env — see scripts/build-push-image.sh
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reaperc2-deployment
+  namespace: reaperc2-ns
+  labels:
+    app: reaperc2-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reaperc2-deployment
+  template:
+    metadata:
+      labels:
+        app: reaperc2-deployment
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: reaperc2
+          image: registry.example.com/reaperc2:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: beacon
+            - containerPort: 8443
+              name: admin
+          env:
+            - name: DEPLOY_ENV
+              value: "ONPREM"
+            - name: MONGO_HOST
+              value: "mongodb-service.reaperc2-ns.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: app_username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-mongodb-secrets
+                  key: app_password
+            - name: MONGO_DATABASE
+              value: "api_db"
+            - name: REAPERC2_ROOT
+              value: "/root"
+          envFrom:
+            - configMapRef:
+                name: reaperc2-ai-config
+                optional: true
+            - secretRef:
+                name: reaperc2-ai-secrets
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8443
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8443
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"

@@ -1,6 +1,8 @@
-# k3s
+# k3s / OnPrem NFS + Ollama
 
-ReaperC2 on **k3s** uses the same manifests and Traefik/cert-manager flow as EKS — see **[`../reaperc2/README.md`](../reaperc2/README.md)** (section **k3s notes**).
+For **OnPrem** k3s (NFS MongoDB, in-cluster Ollama, private registry), use **[`../../k3s/`](../../k3s/)** — not this file.
+
+This entry is for **k3s + Amazon DocumentDB** (same as EKS):
 
 ```bash
 cd ../reaperc2

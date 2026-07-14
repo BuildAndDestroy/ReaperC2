@@ -1,0 +1,18 @@
+# Static NFS volume for MongoDB — edit server/path to match your NAS export.
+# Pi nodes need: sudo apt install -y nfs-common
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: reaperc2-mongo-nfs-pv
+  labels:
+    app: mongo
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: 192.168.1.100
+    path: /volume1/reaperc2db

@@ -1,23 +1,34 @@
 # Kubernetes
 
-Example and environment-specific manifests live under [`deployments/k8s/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/), including:
+Deployment layouts live under [`deployments/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/). See **[`deployments/README.md`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/README.md)** for which path to use.
 
-- [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) — namespace, MongoDB, ReaperC2, Traefik **IngressRoute**, beacon-facing service (sample placeholders for secrets and NFS).
-- [`OnPrem/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/OnPrem/) — in-cluster MongoDB + ReaperC2.
-- [`reaperc2/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/reaperc2/) — ReaperC2 on **EKS or k3s** + **DocumentDB** + Traefik/cert-manager; use [`deploy-cluster.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/deploy-cluster.sh), the thin wrappers [`deploy.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/deploy.sh) (optional **`--with-egress`** / **`--no-egress`**) and [`reroll.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/reroll.sh) (restart + optional secret/ECR refresh), or `kubectl apply -k deployments/k8s/AWS` (**legacy shim** → `aws-ecr` overlay) or `kubectl apply -k deployments/k8s/reaperc2/overlays/k3s` for the **core** stack, then apply ingress when Traefik/cert-manager are ready (see [`reaperc2/README.md`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/README.md)).
-- [`k3s/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/k3s/) — short entrypoint for **k3s** (`REAPER_CLUSTER=k3s` + [`deploy-cluster.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/deploy-cluster.sh)).
+| Path | Use case |
+|------|----------|
+| [`deployments/k8s/reaperc2/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/reaperc2/) | **DocumentDB** on EKS or k3s — [`DEPLOY.md`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/DEPLOY.md) |
+| [`deployments/k3s/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k3s/) | **OnPrem** k3s: NFS MongoDB + in-cluster **Ollama** |
+| [`deployments/k8s/k3s/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/k3s/) | Short pointer: k3s + DocumentDB → `reaperc2/` |
 
-Always review and replace **placeholders** (registry pull secrets, Mongo credentials, storage class, hostnames, TLS issuers) before applying to a real cluster.
+Legacy samples: [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml), [`OnPrem/full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/OnPrem/full-deployment.yaml).
+
+Always review placeholders (registry secrets, Mongo credentials, hostnames, TLS) before applying.
 
 ## Build and push the image
 
+**DocumentDB (EKS / k3s):**
+
 ```bash
-git submodule update --init --recursive   # recommended
-docker build -t <your-registry>/reaperc2:<tag> .
-docker push <your-registry>/reaperc2:<tag>
+cd deployments/k8s/reaperc2
+./build-push-image.sh --arch amd64    # or arm64 for Pi nodes
 ```
 
-Point the Deployment image to your pushed tag. If CI cannot init the submodule, pass `--build-arg SCYTHE_GIT_REF=<tag>` so the Dockerfile clone matches the Scythe revision you intend to ship.
+**OnPrem NFS + Ollama:**
+
+```bash
+cp deployments/k3s/config.example.env deployments/k3s/config.env
+./deployments/k3s/scripts/build-push-image.sh
+```
+
+Requires **Go** on the build machine for the OnPrem script (host cross-compile + `Dockerfile.pack`).
 
 ## Two listeners: beacon vs admin
 
@@ -26,68 +37,35 @@ The binary listens on **8080** (beacon) and **8443** (admin) by default.
 - **Expose 8080** through Ingress / LoadBalancer for implant traffic. Configure `BEACON_PUBLIC_BASE_URL` (and per-beacon base URL in the UI) to that **public** HTTPS origin.
 - **Do not** publish **8443** on a public Ingress for routine operation. Use **`kubectl port-forward`** (or an SSH tunnel via a bastion) from a trusted workstation to reach the admin UI at `http://127.0.0.1:8443` on that machine.
 
-Example:
-
 ```bash
 kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
 ```
 
-Adjust namespace and resource names to match your manifests.
-
 ## Apply manifests
 
-After editing YAML for your cluster:
+**DocumentDB:**
 
 ```bash
-kubectl apply -f deployments/k8s/full-deployment.yaml
+cd deployments/k8s/reaperc2
+REAPER_CLUSTER=k3s ./deploy-cluster.sh all    # or default aws for EKS
+./deploy-cluster.sh apply-ingress
 ```
 
-Traefik **IngressRoute** in the sample routes **beacon** traffic. If you use another ingress controller, adapt routes and TLS the same way: **only** the beacon service port should be on the public edge unless you deliberately expose the admin UI.
+**OnPrem NFS + Ollama:**
+
+```bash
+./deployments/k3s/scripts/deploy.sh
+```
 
 ## MongoDB vs DocumentDB
 
-- **Root / OnPrem** [`full-deployment.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/full-deployment.yaml) includes an in-cluster MongoDB Deployment and PVC.
-- **AWS DocumentDB** (any Kubernetes distro): copy and edit [`deployments/k8s/reaperc2/examples/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/reaperc2/examples/) templates to `*.local.yaml`, fetch the RDS CA bundle (`reaperc2/base/fetch-docdb-ca-bundle.sh` or `./deploy-cluster.sh fetch-ca`), then `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr` (or `.../k3s`) and **`./deploy-cluster.sh apply-ingress`** (or manual `ingress.yaml` / `ingressroute.yaml`) when Traefik is installed. With `DEPLOY_ENV=AWS`, the app adds DocumentDB TLS query parameters automatically ([`pkg/dbconnections/mongoconnections.go`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/pkg/dbconnections/mongoconnections.go)).
-
-## Seeding the database
-
-- **OnPrem / in-cluster Mongo**: [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh) with `MONGO_HOST` set to the Mongo Service DNS name.
-- **AWS DocumentDB**: run `base/docdb-init-job.yaml` and `base/docdb-init-user-job.yaml` from [`deployments/k8s/reaperc2/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/reaperc2); use your infra repo or a host with the RDS CA bundle for ad-hoc `mongosh`.
+- **OnPrem / in-cluster Mongo**: `deployments/k3s/scripts/deploy.sh` or [`test/setup_mongo.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/test/setup_mongo.sh).
+- **DocumentDB**: [`deployments/k8s/reaperc2/README.md`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/reaperc2/README.md).
 
 ## Operator AI (multi-model)
 
-The same env vars as Docker Compose / `.env.example` apply in Kubernetes. Sample manifests:
-
-- [`deployments/k8s/operator-ai.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/operator-ai.yaml) — **ConfigMap** (model catalog, defaults) and **Secret** (API keys).
-- ReaperC2 Deployments under `deployments/k8s/**/full-deployment.yaml` load them with `envFrom` (`optional: true` so the app starts before you enable AI).
-
-**Enable Operator AI:**
-
-1. Copy the template (gitignored local file):
-
-   ```bash
-   cp deployments/k8s/operator-ai.yaml deployments/k8s/operator-ai.local.yaml
-   ```
-
-2. Edit `operator-ai.local.yaml`: ConfigMap (providers, model/deployment names, Bedrock region) and Secret (API keys). Same variables as `.env.example`. For **Azure Foundry**, use your resource URL (`https://YOUR_RESOURCE.openai.azure.com`) and **deployment names** from `az cognitiveservices account deployment list` — not catalog names like `gpt-5.5` unless that is the deployment name.
-
-3. Apply the **local** file (not the template):
-
-   ```bash
-   kubectl apply -f deployments/k8s/operator-ai.local.yaml
-   kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
-   ```
-
-4. Port-forward admin (`8443`) and open **Operator AI** — choose **Auto** or a specific model from the dropdown.
-
-| Source | Variables |
-|--------|-----------|
-| ConfigMap `reaperc2-ai-config` | `REAPER_AI_ENABLED`, `REAPER_AI_DEFAULT_*`, `REAPER_AI_*_MODELS`, `REAPER_AI_FOUNDRY_*`, `REAPER_AI_BEDROCK_*`, `REAPER_AI_OLLAMA_*` |
-| Secret `reaperc2-ai-secrets` | `REAPER_AI_OPENAI_API_KEY`, `REAPER_AI_ANTHROPIC_API_KEY`, `REAPER_AI_FOUNDRY_API_KEY`, `REAPER_AI_BEDROCK_*` keys (or Bedrock via IRSA — see operator guide) |
-
-**AWS EKS / k3s + DocumentDB:** `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr` (or `.../k3s`) applies the core Deployment/Service and DocumentDB ConfigMaps only — **not** Operator AI or Ingress. Use `operator-ai.local.yaml` and [`deploy-cluster.sh`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/deploy-cluster.sh) (or the manual steps in [`deployments/k8s/reaperc2/README.md`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/reaperc2/README.md)). The [`AWS/`](https://github.com/BuildAndDestroy/ReaperC2/tree/main/deployments/k8s/AWS/) directory remains a one-line `kubectl apply -k deployments/k8s/AWS` shim to `aws-ecr`.
-
-**Ollama in K8s** is optional. Most deployments use cloud APIs only. If you run Ollama as its own Deployment/Service, set `REAPER_AI_OLLAMA_ENABLED=1` and `REAPER_AI_OLLAMA_API_URL` to the in-cluster URL (for example `http://ollama.ollama-ns.svc.cluster.local:11434/v1`) in the ConfigMap — not `host.docker.internal`.
+- [`deployments/k8s/operator-ai.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/operator-ai.yaml) — template with **Ollama enabled by default**; copy to `operator-ai.local.yaml` for secrets.
+- **In-cluster Ollama:** [`deployments/k8s/ollama.yaml`](https://github.com/BuildAndDestroy/ReaperC2/blob/main/deployments/k8s/ollama.yaml) — applied by `./deploy-cluster.sh apply-ollama` / `all`, or `deployments/k3s/scripts/deploy.sh`. Skip with `SKIP_OLLAMA=1`.
 
 See [Operator AI](/documentation/operator-guide-ai) for variable details.
 

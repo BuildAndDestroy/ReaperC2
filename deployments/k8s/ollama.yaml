@@ -1,0 +1,152 @@
+# In-cluster Ollama for Operator AI (k8s and k3s).
+# ReaperC2 uses the OpenAI-compatible API at /v1 on port 11434.
+#
+# Apply before operator-ai.yaml (or together):
+#   kubectl apply -f deployments/k8s/ollama.yaml
+#   kubectl apply -f deployments/k8s/operator-ai.yaml
+#
+# k3s: default StorageClass is local-path (ReadWriteOnce). On multi-node clusters,
+# ensure the Ollama pod stays on the node that holds the PVC.
+# Pull models: edit ConfigMap ollama-pull-models, or exec:
+#   kubectl exec -n ollama-ns deploy/ollama -- ollama pull llama3.2:latest
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama-ns
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama-pull-models
+  namespace: ollama-ns
+data:
+  # Comma-separated tags pulled on first pod start (empty = skip init pull).
+  # Keep in sync with REAPER_AI_OLLAMA_MODELS in operator-ai.yaml when possible.
+  OLLAMA_PULL_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data
+  namespace: ollama-ns
+  labels:
+    app: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  # Omit to use the cluster default (k3s: local-path). Set explicitly if needed:
+  # storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: ollama-ns
+  labels:
+    app: ollama
+spec:
+  type: ClusterIP
+  selector:
+    app: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: ollama-ns
+  labels:
+    app: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      initContainers:
+        - name: pull-models
+          image: ollama/ollama:latest
+          envFrom:
+            - configMapRef:
+                name: ollama-pull-models
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              models="$(echo "${OLLAMA_PULL_MODELS:-}" | tr ',' ' ')"
+              if [ -z "$(echo "$models" | tr -d '[:space:]')" ]; then
+                echo "No OLLAMA_PULL_MODELS configured; skipping init pull."
+                exit 0
+              fi
+              ollama serve &
+              pid=$!
+              trap 'kill "$pid" 2>/dev/null || true' EXIT
+              for i in $(seq 1 90); do
+                ollama list >/dev/null 2>&1 && break
+                sleep 2
+              done
+              for model in $models; do
+                model="$(echo "$model" | xargs)"
+                [ -n "$model" ] || continue
+                echo "Pulling $model..."
+                ollama pull "$model"
+              done
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+              name: http
+          env:
+            # Listen on all interfaces inside the pod (ClusterIP Service only).
+            - name: OLLAMA_HOST
+              value: "0.0.0.0:11434"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 11434
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 11434
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-data
