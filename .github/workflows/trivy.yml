@@ -45,3 +45,9 @@ jobs:
           exit-code: "1"
           format: table
           vuln-type: os,library
+          # Debian bookworm packages often have HIGH with no fixed package yet.
+          ignore-unfixed: true
+          # Runtime needs Go + Scythe sources; skip toolchain/mod cache noise and Scythe's
+          # on-disk go.mod (compile-time deps). Application Go vulns are still covered via
+          # govulncheck and the linked binary (Gobinary).
+          skip-dirs: /usr/local/go,/go,/root/third_party

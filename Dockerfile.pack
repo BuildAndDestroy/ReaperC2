@@ -1,27 +1,45 @@
 # syntax=docker/dockerfile:1.7
 # Package a host-built ReaperC2 binary (see `make build-binaries`). No `go build` in Docker.
-FROM golang:1.24-bookworm
+FROM golang:1.25.12-bookworm AS pack
 
 ARG TARGETARCH
 ARG SCYTHE_GIT_REF=main
 ARG SCYTHE_REPO=https://github.com/BuildAndDestroy/Scythe.git
 
-WORKDIR /root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
 
-COPY . /root
-COPY bin/linux-${TARGETARCH}/ReaperC2 /root/cmd/ReaperC2
+WORKDIR /src
+COPY . /src
+COPY bin/linux-${TARGETARCH}/ReaperC2 /out/ReaperC2
 
 RUN set -eux; \
-  test -f /root/cmd/ReaperC2; \
-  test -f third_party/Scythe/go.mod || { \
+  test -f /out/ReaperC2; \
+  if [ ! -f third_party/Scythe/go.mod ]; then \
     mkdir -p third_party; \
     rm -rf third_party/Scythe; \
     git clone --depth 1 --branch "${SCYTHE_GIT_REF}" "${SCYTHE_REPO}" third_party/Scythe; \
-  }; \
+  fi; \
   test -f third_party/Scythe/go.mod
 
+FROM golang:1.25.12-bookworm
+
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /root
+
+COPY --from=pack /out/ReaperC2 /root/cmd/ReaperC2
+COPY --from=pack /src/third_party/Scythe /root/third_party/Scythe
+COPY --from=pack /src/SKILLS.md /root/SKILLS.md
+COPY --from=pack /src/.cursor/skills/reaper-red-team-operator /root/.cursor/skills/reaper-red-team-operator
+
 ARG DEPLOY_ENV=ONPREM
-ENV DEPLOY_ENV=${DEPLOY_ENV}
+ENV DEPLOY_ENV=${DEPLOY_ENV} \
+    REAPERC2_ROOT=/root
 
 EXPOSE 8080 8443
 ENTRYPOINT ["/root/cmd/ReaperC2"]
