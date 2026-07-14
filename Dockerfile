@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Compile inside Docker using vendored modules (run `make vendor` on the host first).
+# Compile inside Docker. Prefer a host-prepared vendor/ tree (`make vendor`) for offline
+# builds; if vendor/ is missing (typical CI), go mod download runs during the image build.
 # On Apple Silicon, prefer `make build` (cross-compiles on the host, then Dockerfile.pack).
 FROM golang:1.24-bookworm AS builder
 
@@ -13,9 +14,11 @@ ENV CGO_ENABLED=0 \
 
 WORKDIR /src
 
-COPY go.mod go.sum ./
-COPY vendor/ vendor/
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
+COPY go.mod go.sum ./
 COPY . .
 
 RUN set -eux; \
@@ -28,8 +31,16 @@ RUN set -eux; \
 
 WORKDIR /src/cmd
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
-    go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/ReaperC2 .
+    --mount=type=cache,target=/go/pkg/mod \
+    set -eux; \
+    if [ -d /src/vendor ] && [ -f /src/vendor/modules.txt ]; then \
+      GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+        go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/ReaperC2 .; \
+    else \
+      (cd /src && go mod download); \
+      GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+        go build -mod=mod -trimpath -ldflags="-s -w" -o /out/ReaperC2 .; \
+    fi
 
 FROM golang:1.24-bookworm
 
