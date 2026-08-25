@@ -1,0 +1,30 @@
+# Beacon traffic only (port 8080). Admin UI is not on public ingress — use port-forward :8443.
+# Apply after core stack: ./deployments/k3s/scripts/deploy.sh --with-ingress
+# Requires Traefik IngressClass + cert-manager ClusterIssuer (CERT_MANAGER_ISSUER in config.env).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reaperc2-ingress
+  namespace: reaperc2-ns
+  annotations:
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: reaperc2-ns-security-headers@kubernetescrd,reaperc2-ns-per-ip-ratelimit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: metrics.harvestrangelabs.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: reaperc2-service
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - metrics.harvestrangelabs.com
+      secretName: metrics-harvestrangelabs-com-tls

@@ -1,0 +1,22 @@
+# Port 80 → 301 redirect to HTTPS. cert-manager HTTP-01 uses separate challenge routes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reaperc2-http-redirect
+  namespace: reaperc2-ns
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: reaperc2-ns-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: metrics.harvestrangelabs.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: reaperc2-service
+                port:
+                  number: 8080

@@ -26,18 +26,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+teardown_k3s_ingress "$K3S_ROOT"
 kubectl_cmd delete -f "${K3S_ROOT}/service.yaml" --ignore-not-found
 kubectl_cmd delete -f "${K3S_ROOT}/deployment.yaml" --ignore-not-found
+kubectl_cmd delete configmap mongo-scripts mongo-init -n "$REAPERC2_NAMESPACE" --ignore-not-found
 kubectl_cmd delete -f "${K3S_ROOT}/mongodb.yaml" --ignore-not-found
 kubectl_cmd delete -f "${K3S_ROOT}/mongo-secret.yaml" --ignore-not-found
+kubectl_cmd delete -f "${K3S_ROOT}/admin-bootstrap-secret.yaml" --ignore-not-found
 kubectl_cmd delete -f "${K8S_ROOT}/operator-ai.yaml" --ignore-not-found
 kubectl_cmd delete -f "${K8S_ROOT}/ollama.yaml" --ignore-not-found
 kubectl_cmd delete -f "${K3S_ROOT}/namespace.yaml" --ignore-not-found
 
 if [[ "$DELETE_PVC" == true ]]; then
-  kubectl_cmd delete pvc mongo-pvc -n reaperc2-ns --ignore-not-found
+  kubectl_cmd delete pvc mongo-pvc -n "$REAPERC2_NAMESPACE" --ignore-not-found
   kubectl_cmd delete pvc ollama-data -n ollama-ns --ignore-not-found
   kubectl_cmd delete pv reaperc2-mongo-nfs-pv --ignore-not-found
+  kubectl_cmd delete pv reaperc2-ollama-nfs-pv --ignore-not-found
 fi
 
 echo "Undeploy complete."

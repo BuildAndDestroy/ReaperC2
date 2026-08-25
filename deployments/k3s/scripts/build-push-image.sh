@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 load_config
 
-ARCH="${ARCH:-arm64}"
+ARCH="${ARCH:-${REAPERC2_BUILD_ARCH:-arm64}}"
 IMPORT_LOCAL=false
 PUSH=true
 

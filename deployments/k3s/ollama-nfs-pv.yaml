@@ -1,0 +1,18 @@
+# Optional static NFS volume for Ollama local model weights (/root/.ollama).
+# Enable by setting OLLAMA_NFS_SERVER and OLLAMA_NFS_PATH in k3s/config.env.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: reaperc2-ollama-nfs-pv
+  labels:
+    app: ollama
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: 10.0.20.181
+    path: /volume1/ollama-models

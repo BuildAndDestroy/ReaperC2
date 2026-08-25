@@ -1,0 +1,16 @@
+# NFS-backed PVC for Ollama model storage. Used when OLLAMA_NFS_* is set in config.env.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data
+  namespace: ollama-ns
+  labels:
+    app: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: reaperc2-ollama-nfs-pv
+  resources:
+    requests:
+      storage: 50Gi
