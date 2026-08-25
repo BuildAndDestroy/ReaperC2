@@ -206,6 +206,25 @@ func CountActiveAdminsExcluding(ctx context.Context, excludeUsername string) (in
 	return n, cur.Err()
 }
 
+// SetOperatorRole sets the portal role (admin | operator).
+func SetOperatorRole(ctx context.Context, username, role string) error {
+	username = strings.TrimSpace(username)
+	role = strings.TrimSpace(role)
+	if username == "" || (role != RoleAdmin && role != RoleOperator) {
+		return mongo.ErrNoDocuments
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"role": role}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
+	return nil
+}
+
 // SetOperatorDisabled sets disabled flag and returns mongo.ErrNoDocuments if user missing.
 func SetOperatorDisabled(ctx context.Context, username string, disabled bool) error {
 	username = strings.TrimSpace(username)

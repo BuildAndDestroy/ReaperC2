@@ -365,8 +365,12 @@ func operatorAIDrawerScript(hasEngagement bool) string {
         if (r.ok && j.reply) {
           var label = j.provider ? (' [' + j.provider + (j.model ? ' · ' + j.model : '') + ']') : '';
           history.push({ role: 'assistant', content: j.reply + label });
+        } else if (j && j.error) {
+          history.push({ role: 'assistant', content: j.error });
+        } else if (r.ok) {
+          history.push({ role: 'assistant', content: 'Model returned an empty reply. Try again or choose another model.' });
         } else {
-          history.push({ role: 'assistant', content: (j && j.error) ? j.error : (r.status + ' ' + r.statusText) });
+          history.push({ role: 'assistant', content: r.status + ' ' + r.statusText });
         }
       } catch (e) {
         history = history.filter(function(m) { return !m.thinking; });

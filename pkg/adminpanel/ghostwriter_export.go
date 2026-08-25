@@ -260,6 +260,8 @@ func ghostwriterUserContext(action string) string {
 		return "Admin | user disabled"
 	case dbconnections.AuditActionUserEnabled:
 		return "Admin | user enabled"
+	case dbconnections.AuditActionUserRoleUpdated:
+		return "Admin | user role updated"
 	case dbconnections.AuditActionEngagementOperatorsUpdated:
 		return "Admin | engagement operators updated"
 	case dbconnections.AuditActionAIChat:
