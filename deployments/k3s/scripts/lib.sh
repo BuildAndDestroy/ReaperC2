@@ -54,7 +54,7 @@ apply_k3s_mongo_configmaps() {
 }
 
 apply_k3s_mongodb() {
-  local node="${MONGO_NODE_HOSTNAME:-pi-master}"
+  local node="${MONGO_NODE_HOSTNAME:-control-plane}"
   sed -e "s|kubernetes.io/hostname: .*|kubernetes.io/hostname: ${node}|" \
     "${K3S_ROOT}/mongodb.yaml" | kubectl_cmd apply -f -
 }
