@@ -22,7 +22,7 @@ metadata:
 data:
   # Comma-separated tags pulled on first pod start (empty = skip init pull).
   # Keep in sync with REAPER_AI_OLLAMA_MODELS in operator-ai.yaml when possible.
-  OLLAMA_PULL_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest"
+  OLLAMA_PULL_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest,glm-5.2:cloud"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -82,6 +82,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: ollama-pull-models
+            - secretRef:
+                name: ollama-api-key
+                optional: true
           command:
             - /bin/sh
             - -c
@@ -125,6 +128,10 @@ spec:
             # Listen on all interfaces inside the pod (ClusterIP Service only).
             - name: OLLAMA_HOST
               value: "0.0.0.0:11434"
+          envFrom:
+            - secretRef:
+                name: ollama-api-key
+                optional: true
           volumeMounts:
             - name: ollama-data
               mountPath: /root/.ollama

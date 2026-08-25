@@ -45,9 +45,19 @@ spec:
                   name: reaperc2-mongodb-secrets
                   key: app_password
             - name: MONGO_DATABASE
-              value: "api_db"
+              value: "reaperc2-metric"
             - name: REAPERC2_ROOT
               value: "/root"
+            - name: ADMIN_BOOTSTRAP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-admin-bootstrap
+                  key: username
+            - name: ADMIN_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reaperc2-admin-bootstrap
+                  key: password
           envFrom:
             - configMapRef:
                 name: reaperc2-ai-config

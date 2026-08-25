@@ -18,7 +18,7 @@ IMPORT_DATA_JSON="${IMPORT_DATA_JSON:-1}"
 DATA_JSON_COLLECTION="${DATA_JSON_COLLECTION:-seed_docs}"
 
 MONGO_URI="mongodb://${ADMINUSER}:${ADMINPASSWORD}@${MONGO_HOST}:${MONGO_PORT}"
-DB_API_NAME="api_db"
+DB_API_NAME="${MONGO_DATABASE:-api_db}"
 DB_DATA_COLLECTION="data"
 COLLECTION_CLIENTS="clients"
 COLLECTION_HEARTBEAT="heartbeat"
@@ -113,15 +113,18 @@ EOF
 # mongosh "$MONGO_URI" --authenticationDatabase admin <<EOF
 mongosh "$MONGO_URI" <<EOF
 use $DB_API_NAME;
-db.createUser({
-  user: "$APIUSER",
-  pwd: "$APIUSERPASSWORD",
-  roles: [
-    { role: "readWrite", db: "$DB_API_NAME" }
-  ]
-});
-
-print("✅ Created $APIUSER with access to $DB_API_NAME");
+if (!db.getUser("$APIUSER")) {
+  db.createUser({
+    user: "$APIUSER",
+    pwd: "$APIUSERPASSWORD",
+    roles: [
+      { role: "readWrite", db: "$DB_API_NAME" }
+    ]
+  });
+  print("✅ Created $APIUSER with access to $DB_API_NAME");
+} else {
+  print("ℹ️  User $APIUSER already exists on $DB_API_NAME — skipping createUser");
+}
 EOF
 
 if [[ "${IMPORT_DATA_JSON}" == "1" ]] && [[ -f "${DATA_JSON}" ]]; then

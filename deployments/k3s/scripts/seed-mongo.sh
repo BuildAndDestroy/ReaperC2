@@ -20,6 +20,7 @@ export MONGO_API_USER="$app_user"
 export MONGO_API_PASSWORD="$app_pass"
 export MONGO_HOST="127.0.0.1"
 export MONGO_PORT="27017"
+export MONGO_DATABASE="${MONGO_DATABASE:-reaperc2-metric}"
 export IMPORT_DATA_JSON="${IMPORT_DATA_JSON:-0}"
 
 echo "Port-forwarding MongoDB..."

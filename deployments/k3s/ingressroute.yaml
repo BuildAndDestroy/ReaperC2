@@ -1,0 +1,20 @@
+# Traefik IngressRoute for beacon HTTPS (matches TLS secret from ingress.yaml).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: reaperc2-ingressroute
+  namespace: reaperc2-ns
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`beacons.example.com`)
+      kind: Rule
+      middlewares:
+        - name: security-headers
+        - name: per-ip-ratelimit
+      services:
+        - name: reaperc2-service
+          port: 8080
+  tls:
+    secretName: beacons-example-com-tls
