@@ -230,14 +230,14 @@ patch_k3s_ingress_host() {
   local file="$1"
   local host="$2"
   local issuer="$3"
-  sed -e "s|metrics\\.harvestrangelabs\\.com|${host}|g" \
+  sed -e "s|beacons\\.example\\.com|${host}|g" \
       -e "s|cert-manager.io/cluster-issuer: .*|cert-manager.io/cluster-issuer: ${issuer}|" \
       "$file"
 }
 
 apply_k3s_ingress() {
   local k3s_root="$1"
-  local host="${INGRESS_HOST:-metrics.harvestrangelabs.com}"
+  local host="${INGRESS_HOST:-beacons.example.com}"
   local issuer="${CERT_MANAGER_ISSUER:-letsencrypt-prod}"
   local ns="${REAPERC2_NAMESPACE:-reaperc2-ns}"
 
@@ -263,7 +263,7 @@ apply_k3s_ingress() {
 teardown_k3s_ingress() {
   local k3s_root="$1"
   local ns="${REAPERC2_NAMESPACE:-reaperc2-ns}"
-  local tls_secret="metrics-harvestrangelabs-com-tls"
+  local tls_secret="beacons-example-com-tls"
   local ing_name="reaperc2-ingress"
 
   echo "Removing ingress, middlewares, and staging/prod TLS resources..."

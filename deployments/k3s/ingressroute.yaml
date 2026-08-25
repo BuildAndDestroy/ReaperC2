@@ -8,7 +8,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`metrics.harvestrangelabs.com`)
+    - match: Host(`beacons.example.com`)
       kind: Rule
       middlewares:
         - name: security-headers
@@ -17,4 +17,4 @@ spec:
         - name: reaperc2-service
           port: 8080
   tls:
-    secretName: metrics-harvestrangelabs-com-tls
+    secretName: beacons-example-com-tls

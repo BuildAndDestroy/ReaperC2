@@ -8,7 +8,7 @@ Deploy ReaperC2 on **k3s** with **NFS MongoDB**, a **private registry** image, a
 
 | Surface | Access |
 |---------|--------|
-| **Beacons** | Public HTTPS on `metrics.harvestrangelabs.com` → service `:8080` (`deploy.sh --with-ingress`) |
+| **Beacons** | Public HTTPS on `INGRESS_HOST` (default `beacons.example.com`) → service `:8080` (`deploy.sh --with-ingress`) |
 | **Admin UI** | **Port-forward only** (same as AWS reaperc2 path — not on public ingress) |
 | **Operator AI** | `/ai` after admin port-forward |
 
@@ -17,11 +17,11 @@ Deploy ReaperC2 on **k3s** with **NFS MongoDB**, a **private registry** image, a
 - k3s (`curl -sfL https://get.k3s.io | sh -`)
 - `kubectl` or `sudo k3s kubectl`
 - NFS export for MongoDB (e.g. `/export/reaperc2-metric` on your NAS); `nfs-common` on nodes
-- **MongoDB must run on Pi 5 control plane** (`MONGO_NODE_HOSTNAME=pi-master`) — `mongo:7` needs ARMv8.2; Pi 4 workers will crash
+- Pin MongoDB to a capable node if needed (`MONGO_NODE_HOSTNAME=control-plane`; mongo:7 needs ARMv8.2 on some ARM boards)
 - Go on the build machine (for `build-push-image.sh`)
 - ≥ 4 GiB RAM recommended for Ollama
 - For public beacons: Traefik + cert-manager with ClusterIssuer `letsencrypt-prod` (or set `CERT_MANAGER_ISSUER` in `config.env`)
-- DNS `metrics.harvestrangelabs.com` → cluster ingress
+- DNS for `INGRESS_HOST` → cluster ingress
 
 ## Quick start
 

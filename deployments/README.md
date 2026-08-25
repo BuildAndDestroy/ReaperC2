@@ -31,11 +31,11 @@ REGISTRY_PASSWORD='your-password-here'
 |----------|---------|
 | `MONGO_NFS_SERVER` / `MONGO_NFS_PATH` | NFS export for MongoDB PV (e.g. `192.168.1.100:/export/reaperc2-metric`) |
 | `MONGO_DATABASE` | Mongo database name (default `reaperc2-metric`) |
-| `MONGO_NODE_HOSTNAME` | Node for Mongo StatefulSet (default `pi-master`; required for mongo:7 on Pi 5) |
+| `MONGO_NODE_HOSTNAME` | Node for Mongo StatefulSet (e.g. `control-plane`; mongo:7 may need ARMv8.2+) |
 | `REGISTRY_SERVER` / `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | Private registry push/pull |
 | `REGISTRY_SECRET_NAME` | Kubernetes pull secret name (default `registry-credentials`) |
 | `REAPERC2_IMAGE` / `REAPERC2_IMAGE_TAG` | Container image to deploy |
-| `INGRESS_HOST` | Public beacon hostname (default `metrics.harvestrangelabs.com`) |
+| `INGRESS_HOST` | Public beacon hostname (default `beacons.example.com`) |
 | `CERT_MANAGER_ISSUER` | ClusterIssuer for beacon TLS (default `letsencrypt-prod`) |
 | `OLLAMA_NFS_SERVER` / `OLLAMA_NFS_PATH` | NFS export for Ollama model weights (e.g. `/export/ollama-models`) |
 | `OLLAMA_PULL_MODELS` | Comma-separated tags pulled on first Ollama start |
@@ -51,7 +51,7 @@ REGISTRY_PASSWORD='your-password-here'
 
 Edit [`k3s/mongo-secret.yaml`](k3s/mongo-secret.yaml) before first deploy (`root_*`, `app_*`). Database name is **`reaperc2-metric`** (`MONGO_DATABASE`). Do not change passwords after Mongo has initialized the NFS volume without resetting data.
 
-**Ingress:** beacons only on `INGRESS_HOST` (default `metrics.harvestrangelabs.com`). Admin UI uses `kubectl port-forward … 8443:8443` — not exposed on ingress (same as [`k8s/reaperc2/`](k8s/reaperc2/)).
+**Ingress:** beacons only on `INGRESS_HOST` (default `beacons.example.com`). Admin UI uses `kubectl port-forward … 8443:8443` — not exposed on ingress (same as [`k8s/reaperc2/`](k8s/reaperc2/)).
 
 ---
 

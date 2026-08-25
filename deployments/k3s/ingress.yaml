@@ -14,7 +14,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: metrics.harvestrangelabs.com
+    - host: beacons.example.com
       http:
         paths:
           - path: /
@@ -26,5 +26,5 @@ spec:
                   number: 8080
   tls:
     - hosts:
-        - metrics.harvestrangelabs.com
-      secretName: metrics-harvestrangelabs-com-tls
+        - beacons.example.com
+      secretName: beacons-example-com-tls

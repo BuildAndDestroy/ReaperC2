@@ -10,7 +10,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: metrics.harvestrangelabs.com
+    - host: beacons.example.com
       http:
         paths:
           - path: /

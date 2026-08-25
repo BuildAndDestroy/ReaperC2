@@ -27,7 +27,7 @@ Slow rollout: deploy Ollama first (model pulls can take 30+ minutes on Pi):
   ./deployments/k3s/scripts/deploy.sh --ollama-only
 
 Beacon traffic: use --with-ingress for public HTTPS on INGRESS_HOST (default
-metrics.harvestrangelabs.com → service :8080). Admin UI is never on ingress;
+beacons.example.com → service :8080). Admin UI is never on ingress;
 use kubectl port-forward :8443 (same as AWS reaperc2 path).
 
 Options:

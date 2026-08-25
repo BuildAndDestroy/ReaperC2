@@ -34,7 +34,7 @@ spec:
         app: mongo
     spec:
       nodeSelector:
-        kubernetes.io/hostname: pi-master
+        kubernetes.io/hostname: control-plane
       containers:
         - name: mongo
           image: mongo:7
