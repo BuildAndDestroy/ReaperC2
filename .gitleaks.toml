@@ -1,0 +1,15 @@
+# gitleaks config — https://github.com/gitleaks/gitleaks
+title = "ReaperC2 gitleaks"
+
+[extend]
+useDefault = true
+
+# Template/example credentials are placeholders, not live secrets.
+[[allowlists]]
+description = "k3s deployment credential templates"
+paths = [
+  '''deployments/k3s/mongo-secret\.yaml''',
+  '''deployments/k3s/admin-bootstrap-secret\.yaml''',
+  '''deployments/k3s/config\.example\.env''',
+  '''\.env\.example''',
+]

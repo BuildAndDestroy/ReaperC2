@@ -20,7 +20,7 @@ spec:
         - name: registry-credentials
       containers:
         - name: reaperc2
-          image: registry.harvestrangelabs.com/reaperc2:latest
+          image: registry.example.com/reaperc2:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
