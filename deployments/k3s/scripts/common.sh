@@ -85,7 +85,7 @@ patch_mongo_nfs_pv() {
     exit 1
   fi
   sed -e "s|server: .*|server: ${server}|" \
-      -e "s|path: /volume1/.*|path: ${path}|" \
+      -e "s|path: /export/.*|path: ${path}|" \
       "$pv_file" | kubectl_cmd apply -f -
 }
 
@@ -97,7 +97,7 @@ apply_ollama_stack() {
   kubectl_cmd create namespace ollama-ns --dry-run=client -o yaml | kubectl_cmd apply -f -
   if [[ -n "${OLLAMA_NFS_SERVER:-}" && -n "${OLLAMA_NFS_PATH:-}" && -n "$k3s_root" ]]; then
     sed -e "s|server: .*|server: ${OLLAMA_NFS_SERVER}|" \
-        -e "s|path: /volume1/.*|path: ${OLLAMA_NFS_PATH}|" \
+        -e "s|path: /export/.*|path: ${OLLAMA_NFS_PATH}|" \
         "${k3s_root}/ollama-nfs-pv.yaml" | kubectl_cmd apply -f -
     kubectl_cmd apply -f "${k3s_root}/ollama-pvc-nfs.yaml"
     sed -e '/^kind: PersistentVolumeClaim$/,/^---$/d' \

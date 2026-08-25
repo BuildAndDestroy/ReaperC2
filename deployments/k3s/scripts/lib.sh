@@ -15,8 +15,8 @@ load_config() {
     "${K3S_ROOT}/config.env" \
     "${K3S_ROOT}/../config.env" \
     || true
-  MONGO_NFS_SERVER="${MONGO_NFS_SERVER:-10.0.20.181}"
-  MONGO_NFS_PATH="${MONGO_NFS_PATH:-/volume1/reaperc2-metric}"
+  MONGO_NFS_SERVER="${MONGO_NFS_SERVER:-192.168.1.100}"
+  MONGO_NFS_PATH="${MONGO_NFS_PATH:-/export/reaperc2-metric}"
   MONGO_DATABASE="${MONGO_DATABASE:-reaperc2-metric}"
   MONGO_NODE_HOSTNAME="${MONGO_NODE_HOSTNAME:-pi-master}"
   REGISTRY_SERVER="${REGISTRY_SERVER:-registry.example.com}"
@@ -25,8 +25,8 @@ load_config() {
   REAPERC2_IMAGE_TAG="${REAPERC2_IMAGE_TAG:-latest}"
   REAPERC2_BUILD_ARCH="${REAPERC2_BUILD_ARCH:-arm64}"
   OLLAMA_PULL_MODELS="${OLLAMA_PULL_MODELS:-llama3.2:latest}"
-  OLLAMA_NFS_SERVER="${OLLAMA_NFS_SERVER:-10.0.20.181}"
-  OLLAMA_NFS_PATH="${OLLAMA_NFS_PATH:-/volume1/ollama-models}"
+  OLLAMA_NFS_SERVER="${OLLAMA_NFS_SERVER:-192.168.1.100}"
+  OLLAMA_NFS_PATH="${OLLAMA_NFS_PATH:-/export/ollama-models}"
   OLLAMA_STORAGE_CLASS="${OLLAMA_STORAGE_CLASS:-}"
   REAPERC2_NAMESPACE="${REAPERC2_NAMESPACE:-reaperc2-ns}"
   INGRESS_HOST="${INGRESS_HOST:-metrics.harvestrangelabs.com}"

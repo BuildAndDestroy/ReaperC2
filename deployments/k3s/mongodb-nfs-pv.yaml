@@ -15,4 +15,4 @@ spec:
   storageClassName: ""
   nfs:
     server: 192.168.1.100
-    path: /volume1/reaperc2-metric
+    path: /export/reaperc2-metric

@@ -16,7 +16,7 @@ Deploy ReaperC2 on **k3s** with **NFS MongoDB**, a **private registry** image, a
 
 - k3s (`curl -sfL https://get.k3s.io | sh -`)
 - `kubectl` or `sudo k3s kubectl`
-- NFS export for MongoDB (`/volume1/reaperc2-metric` or your path); `nfs-common` on nodes
+- NFS export for MongoDB (e.g. `/export/reaperc2-metric` on your NAS); `nfs-common` on nodes
 - **MongoDB must run on Pi 5 control plane** (`MONGO_NODE_HOSTNAME=pi-master`) — `mongo:7` needs ARMv8.2; Pi 4 workers will crash
 - Go on the build machine (for `build-push-image.sh`)
 - ≥ 4 GiB RAM recommended for Ollama
@@ -41,7 +41,7 @@ kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
 ## MongoDB
 
 - Database name: **`reaperc2-metric`** (`MONGO_DATABASE` in `config.env`)
-- NFS path default: `/volume1/reaperc2-metric` on your Synology (edit `MONGO_NFS_*` in `config.env`)
+- NFS path example: `/export/reaperc2-metric` (edit `MONGO_NFS_*` in `config.env`)
 - First install requires an **empty** NFS export; app user is bootstrapped on first pod start
 - Do not change `mongo-secret.yaml` passwords after Mongo has initialized without resetting NFS data
 

@@ -29,7 +29,7 @@ REGISTRY_PASSWORD='your-password-here'
 
 | Variable | Purpose |
 |----------|---------|
-| `MONGO_NFS_SERVER` / `MONGO_NFS_PATH` | NFS export for MongoDB PV (default path `/volume1/reaperc2-metric`) |
+| `MONGO_NFS_SERVER` / `MONGO_NFS_PATH` | NFS export for MongoDB PV (e.g. `192.168.1.100:/export/reaperc2-metric`) |
 | `MONGO_DATABASE` | Mongo database name (default `reaperc2-metric`) |
 | `MONGO_NODE_HOSTNAME` | Node for Mongo StatefulSet (default `pi-master`; required for mongo:7 on Pi 5) |
 | `REGISTRY_SERVER` / `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | Private registry push/pull |
@@ -37,7 +37,7 @@ REGISTRY_PASSWORD='your-password-here'
 | `REAPERC2_IMAGE` / `REAPERC2_IMAGE_TAG` | Container image to deploy |
 | `INGRESS_HOST` | Public beacon hostname (default `metrics.harvestrangelabs.com`) |
 | `CERT_MANAGER_ISSUER` | ClusterIssuer for beacon TLS (default `letsencrypt-prod`) |
-| `OLLAMA_NFS_SERVER` / `OLLAMA_NFS_PATH` | NFS export for Ollama model weights (default `/volume1/ollama-models`) |
+| `OLLAMA_NFS_SERVER` / `OLLAMA_NFS_PATH` | NFS export for Ollama model weights (e.g. `/export/ollama-models`) |
 | `OLLAMA_PULL_MODELS` | Comma-separated tags pulled on first Ollama start |
 | `OLLAMA_STORAGE_CLASS` | Fallback PVC class only if `OLLAMA_NFS_*` is unset |
 | `REAPERC2_NAMESPACE` | Default `reaperc2-ns` |
