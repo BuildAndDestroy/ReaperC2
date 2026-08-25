@@ -5,7 +5,7 @@
 #
 # Runtime stays on golang so Scythe.embedded can `go build` at request time, but we only
 # ship the binary + Scythe sources + Operator AI skill files (not the full vendor/ source tree).
-FROM golang:1.25.12-bookworm AS builder
+FROM golang:1.25.13-bookworm AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         go build -mod=mod -trimpath -ldflags="-s -w" -o /out/ReaperC2 .; \
     fi
 
-FROM golang:1.25.12-bookworm
+FROM golang:1.25.13-bookworm
 
 # Refresh OS packages to pick up Debian security updates in the golang base image.
 RUN apt-get update \

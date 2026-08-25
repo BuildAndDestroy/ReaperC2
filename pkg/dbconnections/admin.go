@@ -2,6 +2,7 @@ package dbconnections
 
 import (
 	"context"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,29 @@ const (
 	RoleAdmin    = "admin"
 	RoleOperator = "operator"
 )
+
+// operatorUsernamePattern is the allowlist used before Mongo filters so user-supplied
+// names cannot carry query operators (CodeQL go/sql-injection / go/nosql-injection).
+var operatorUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func canonicalOperatorUsername(username string) (string, bool) {
+	username = strings.TrimSpace(username)
+	if !operatorUsernamePattern.MatchString(username) {
+		return "", false
+	}
+	return username, true
+}
+
+func canonicalOperatorRole(role string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case RoleAdmin:
+		return RoleAdmin, true
+	case RoleOperator:
+		return RoleOperator, true
+	default:
+		return "", false
+	}
+}
 
 // Operator is a human operator account for the admin panel.
 type Operator struct {
@@ -208,14 +232,17 @@ func CountActiveAdminsExcluding(ctx context.Context, excludeUsername string) (in
 
 // SetOperatorRole sets the portal role (admin | operator).
 func SetOperatorRole(ctx context.Context, username, role string) error {
-	username = strings.TrimSpace(username)
-	role = strings.TrimSpace(role)
-	if username == "" || (role != RoleAdmin && role != RoleOperator) {
+	username, ok := canonicalOperatorUsername(username)
+	if !ok {
+		return mongo.ErrNoDocuments
+	}
+	storedRole, ok := canonicalOperatorRole(role)
+	if !ok {
 		return mongo.ErrNoDocuments
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"role": role}})
+	res, err := OperatorsCollection.UpdateOne(ctx, bson.M{"username": username}, bson.M{"$set": bson.M{"role": storedRole}})
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Package a host-built ReaperC2 binary (see `make build-binaries`). No `go build` in Docker.
-FROM golang:1.25.12-bookworm AS pack
+FROM golang:1.25.13-bookworm AS pack
 
 ARG TARGETARCH
 ARG SCYTHE_GIT_REF=main
@@ -24,7 +24,7 @@ RUN set -eux; \
   fi; \
   test -f third_party/Scythe/go.mod
 
-FROM golang:1.25.12-bookworm
+FROM golang:1.25.13-bookworm
 
 RUN apt-get update \
   && apt-get upgrade -y --no-install-recommends \

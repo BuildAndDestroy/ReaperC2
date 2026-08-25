@@ -280,7 +280,7 @@ func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	target := strings.TrimSpace(mux.Vars(r)["username"])
-	if target == "" {
+	if target == "" || !isValidUsername(target) {
 		jsonError(w, http.StatusBadRequest, "username required")
 		return
 	}
