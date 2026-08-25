@@ -72,11 +72,12 @@ func PeekMFAChallenge(ctx context.Context, token string) (username string, err e
 
 // DeleteMFAChallengesForUser removes any pending login challenges for a user (e.g. after password change).
 func DeleteMFAChallengesForUser(ctx context.Context, username string) error {
-	if username == "" {
+	filter, ok := operatorUsernameFilter(username)
+	if !ok {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	_, err := MFAChallengesCollection.DeleteMany(ctx, bson.M{"username": username})
+	_, err := MFAChallengesCollection.DeleteMany(ctx, filter)
 	return err
 }

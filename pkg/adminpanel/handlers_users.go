@@ -67,7 +67,31 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString("<tr><td>")
 		rows.WriteString(template.HTMLEscapeString(op.Username))
 		rows.WriteString("</td><td>")
-		rows.WriteString(template.HTMLEscapeString(rn))
+		if op.Username == u {
+			rows.WriteString(template.HTMLEscapeString(rn))
+		} else {
+			rows.WriteString(`<select class="user-role-select" data-username="`)
+			rows.WriteString(template.HTMLEscapeString(op.Username))
+			rows.WriteString(`" aria-label="Role for `)
+			rows.WriteString(template.HTMLEscapeString(op.Username))
+			rows.WriteString(`">`)
+			for _, rv := range []string{dbconnections.RoleOperator, dbconnections.RoleAdmin} {
+				rows.WriteString(`<option value="`)
+				rows.WriteString(rv)
+				rows.WriteString(`"`)
+				if rn == rv {
+					rows.WriteString(` selected`)
+				}
+				rows.WriteString(`>`)
+				if rv == dbconnections.RoleAdmin {
+					rows.WriteString("Admin")
+				} else {
+					rows.WriteString("Operator")
+				}
+				rows.WriteString(`</option>`)
+			}
+			rows.WriteString(`</select>`)
+		}
 		rows.WriteString("</td><td>")
 		rows.WriteString(template.HTMLEscapeString(st))
 		rows.WriteString("</td><td>")
@@ -95,7 +119,7 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 	selfQuoted, _ := json.Marshal(u)
 	body := `
 <h1>Users</h1>
-<p class="muted">Create portal accounts. <strong>Disabled</strong> users cannot sign in; their sessions end immediately. You cannot disable yourself. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
+<p class="muted">Create portal accounts and change roles. <strong>Disabled</strong> users cannot sign in; their sessions end immediately. You cannot disable yourself or change your own role. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
 <div class="card">
   <h2>Create user</h2>
   <label>Username</label>
@@ -131,31 +155,47 @@ document.getElementById('createu').onclick = async function() {
   out.textContent = r.ok ? JSON.stringify(j, null, 2) : (j.error || r.statusText);
 };
 document.getElementById('refusers').onclick = function() { location.reload(); };
-async function patchUser(username, disabled) {
+async function patchUser(username, body) {
   var r = await fetch('/api/users/' + encodeURIComponent(username), {
     method: 'PATCH',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ disabled: disabled })
+    body: JSON.stringify(body)
   });
   var j = await r.json().catch(function() { return {}; });
-  if (!r.ok) { alert(j.error || r.statusText); return; }
-  location.reload();
+  if (!r.ok) { alert(j.error || r.statusText); return false; }
+  return true;
 }
 document.querySelectorAll('[data-disable]').forEach(function(btn) {
-  btn.onclick = function() {
+  btn.onclick = async function() {
     var name = btn.getAttribute('data-disable');
     if (!name || name === window.__USERS_SELF__) return;
     if (!confirm('Disable ' + name + '? They will be signed out and cannot log in until re-enabled.')) return;
-    patchUser(name, true);
+    if (await patchUser(name, { disabled: true })) location.reload();
   };
 });
 document.querySelectorAll('[data-enable]').forEach(function(btn) {
-  btn.onclick = function() {
+  btn.onclick = async function() {
     var name = btn.getAttribute('data-enable');
     if (!name) return;
-    patchUser(name, false);
+    if (await patchUser(name, { disabled: false })) location.reload();
   };
+});
+document.querySelectorAll('.user-role-select').forEach(function(sel) {
+  var initial = sel.value;
+  sel.addEventListener('change', async function() {
+    var name = sel.getAttribute('data-username');
+    var role = sel.value;
+    if (!name || name === window.__USERS_SELF__) { sel.value = initial; return; }
+    var label = role === 'admin' ? 'Admin' : 'Operator';
+    if (!confirm('Change ' + name + ' to ' + label + '?')) { sel.value = initial; return; }
+    if (await patchUser(name, { role: role })) {
+      initial = role;
+      location.reload();
+    } else {
+      sel.value = initial;
+    }
+  });
 });
 </script>`
 	s.writeAppPage(w, u, role, "users", "Users", body, nil)
@@ -240,7 +280,7 @@ func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	target := strings.TrimSpace(mux.Vars(r)["username"])
-	if target == "" {
+	if target == "" || !isValidUsername(target) {
 		jsonError(w, http.StatusBadRequest, "username required")
 		return
 	}
@@ -249,13 +289,14 @@ func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Disabled *bool `json:"disabled"`
+		Disabled *bool   `json:"disabled"`
+		Role     *string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if req.Disabled == nil {
+	if req.Disabled == nil && req.Role == nil {
 		jsonError(w, http.StatusBadRequest, "no changes")
 		return
 	}
@@ -270,7 +311,54 @@ func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request)
 		jsonError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if *req.Disabled && isAdmin(effectivePortalRole(targetOp)) {
+	resp := map[string]interface{}{"ok": true, "username": target}
+	currentRole := effectivePortalRole(targetOp)
+
+	if req.Role != nil {
+		newRole := strings.ToLower(strings.TrimSpace(*req.Role))
+		if newRole != dbconnections.RoleAdmin && newRole != dbconnections.RoleOperator {
+			jsonError(w, http.StatusBadRequest, "role must be admin or operator")
+			return
+		}
+		if newRole != currentRole {
+			if currentRole == dbconnections.RoleAdmin && newRole == dbconnections.RoleOperator && !dbconnections.OperatorIsDisabled(targetOp) {
+				n, err := dbconnections.CountActiveAdminsExcluding(ctx, target)
+				if err != nil {
+					log.Printf("admin: count active admins: %v", err)
+					jsonError(w, http.StatusInternalServerError, "failed")
+					return
+				}
+				if n == 0 {
+					jsonError(w, http.StatusBadRequest, "cannot demote the last active administrator")
+					return
+				}
+			}
+			if err := dbconnections.SetOperatorRole(ctx, target, newRole); err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					jsonError(w, http.StatusNotFound, "user not found")
+					return
+				}
+				jsonError(w, http.StatusInternalServerError, "failed to update role")
+				return
+			}
+			if aerr := dbconnections.InsertAuditLog(ctx, adminUser, dbconnections.AuditActionUserRoleUpdated, bson.M{
+				"target_username": target,
+				"old_role":        currentRole,
+				"new_role":        newRole,
+			}, ""); aerr != nil {
+				log.Printf("admin: audit user role: %v", aerr)
+			}
+			currentRole = newRole
+			resp["role"] = newRole
+		}
+	}
+
+	if req.Disabled == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	if *req.Disabled && currentRole == dbconnections.RoleAdmin && !dbconnections.OperatorIsDisabled(targetOp) {
 		n, err := dbconnections.CountActiveAdminsExcluding(ctx, target)
 		if err != nil {
 			log.Printf("admin: count active admins: %v", err)
@@ -299,8 +387,9 @@ func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request)
 	if aerr := dbconnections.InsertAuditLog(ctx, adminUser, action, bson.M{"target_username": target}, ""); aerr != nil {
 		log.Printf("admin: audit user enable/disable: %v", aerr)
 	}
+	resp["disabled"] = *req.Disabled
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "username": target, "disabled": *req.Disabled})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func isValidUsername(s string) bool {

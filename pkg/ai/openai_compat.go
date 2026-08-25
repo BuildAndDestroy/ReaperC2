@@ -60,8 +60,10 @@ func chatOpenAICompatible(ctx context.Context, cfg ProviderSettings, system stri
 
 	var parsed struct {
 		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content json.RawMessage `json:"content"`
+				Refusal *string         `json:"refusal"`
 			} `json:"message"`
 		} `json:"choices"`
 		Error *struct {
@@ -77,7 +79,60 @@ func chatOpenAICompatible(ctx context.Context, cfg ProviderSettings, system stri
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("%s: empty response", cfg.Label)
 	}
-	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+	choice := parsed.Choices[0]
+	if choice.Message.Refusal != nil {
+		if s := strings.TrimSpace(*choice.Message.Refusal); s != "" {
+			return "", fmt.Errorf("%s: model refused: %s", cfg.Label, s)
+		}
+	}
+	content, err := extractOpenAIMessageContent(choice.Message.Content)
+	if err != nil {
+		return "", fmt.Errorf("parse %s response content: %w", cfg.Label, err)
+	}
+	if content == "" {
+		return "", fmt.Errorf("%s: %s", cfg.Label, openAICompatEmptyReplyError(choice.FinishReason, useAzureOpenAICompatMaxCompletion(cfg)))
+	}
+	return content, nil
+}
+
+// extractOpenAIMessageContent handles OpenAI-compatible message content as a string or
+// an array of {type,text} parts (Azure GPT-5 / newer SKUs may return the latter).
+func extractOpenAIMessageContent(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s), nil
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var out []string
+		for _, p := range parts {
+			if t := strings.TrimSpace(p.Text); t != "" {
+				out = append(out, t)
+			}
+		}
+		return strings.TrimSpace(strings.Join(out, "\n")), nil
+	}
+	return "", fmt.Errorf("unexpected content shape")
+}
+
+func openAICompatEmptyReplyError(finishReason string, azureReasoning bool) string {
+	switch strings.ToLower(strings.TrimSpace(finishReason)) {
+	case "length":
+		if azureReasoning {
+			return "model returned no visible text (output token budget exhausted; reasoning tokens count toward max_completion_tokens). Increase REAPER_AI_MAX_TOKENS or retry with a shorter prompt"
+		}
+		return "model returned no visible text (output token budget exhausted). Increase REAPER_AI_MAX_TOKENS or retry with a shorter prompt"
+	case "content_filter":
+		return "response blocked by content filter"
+	default:
+		return "empty message content"
+	}
 }
 
 // useAzureOpenAICompatMaxCompletion is true for Azure AI Foundry / Azure OpenAI inference

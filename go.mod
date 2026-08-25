@@ -2,7 +2,7 @@ module ReaperC2
 
 go 1.25.0
 
-toolchain go1.25.12
+toolchain go1.25.13
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.7
@@ -14,7 +14,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/pquerna/otp v1.5.0
 	github.com/yuin/goldmark v1.7.17
-	go.mongodb.org/mongo-driver v1.17.3
+	go.mongodb.org/mongo-driver v1.17.7
 	golang.org/x/crypto v0.54.0
 )
 
