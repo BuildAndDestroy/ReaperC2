@@ -24,11 +24,10 @@ Supported path: **DocumentDB**, Traefik, cert-manager, Bedrock Operator AI.
 
 ```bash
 cd deployments/k8s/reaperc2
-chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
+chmod +x deploy.sh reroll.sh ship.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
 # AWS: export AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN; unset AWS_PROFILE
-# export AWS_ACCOUNT_ID=… AWS_REGION=us-east-1  (match base/deployment.yaml ECR host)
-# Build and push: ./build-push-image.sh --arch amd64   # or arm64 / both
-# Copy and edit examples/*.local.yaml, base/deployment.yaml image, optional ../operator-ai.local.yaml
+# Build/push :latest and restart: ./ship.sh
+# First install only: copy examples/*.local.yaml, optional ../operator-ai.local.yaml
 ./deploy.sh check-local
 ./deploy.sh all                    # or: ./deploy-cluster.sh all
 ./deploy.sh job-docdb-user
@@ -38,7 +37,7 @@ chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-do
 
 **Egress lockdown (optional):** copy `reaperc2/examples/networkpolicy-egress-restricted.yaml` → `networkpolicy-egress-restricted.local.yaml`, edit DocumentDB CIDR, then `./deploy.sh --with-egress all`. Requires a CNI that enforces NetworkPolicy.
 
-**After you change secrets, manifests, or the image tag:** `./reroll.sh --apply-core` if `base/deployment.yaml` (or overlay) changed in git; `./reroll.sh` alone only restarts pods without applying YAML from disk. Add `--apply-secrets` / `--refresh-ecr` as needed.
+**After you change secrets or manifests:** `./reroll.sh --apply-core`. **After a new image:** `./ship.sh` (push `:latest` + restart). `./reroll.sh` alone restarts pods without pushing.
 
 **k3s:** `REAPER_CLUSTER=k3s ./deploy.sh all` (same scripts).
 

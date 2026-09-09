@@ -23,7 +23,7 @@ These caused most deploy pain — avoid them up front:
 | **`docdb-init` Job errors** | Run `./deploy-cluster.sh apply-core` first (refreshes SCRAM-SHA-1 scripts), then re-apply the Job. |
 | **App still uses wrong auth DB** | `base/deployment.yaml` reads `auth_source` from the secret. After editing the secret: `kubectl apply -f base/deployment.yaml` and rollout restart. |
 
-ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Operator AI includes **in-cluster Ollama** by default ([`../ollama.yaml`](../ollama.yaml); applied by `./deploy-cluster.sh apply-ollama` / `all`) plus optional Bedrock and other cloud providers (see [Bedrock credentials](#bedrock-credentials-rotation)). Skip Ollama with `SKIP_OLLAMA=1` if the node cannot host models.
+ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Staged uploads and beacon downloads on **Commands** are stored in DocumentDB (metadata in `file_artifacts`, bytes in GridFS bucket `reaper_artifacts`) so they survive pod recycles and are visible to all replicas. Operator AI includes **in-cluster Ollama** by default ([`../ollama.yaml`](../ollama.yaml); applied by `./deploy-cluster.sh apply-ollama` / `all`) plus optional Bedrock and other cloud providers (see [Bedrock credentials](#bedrock-credentials-rotation)). Skip Ollama with `SKIP_OLLAMA=1` if the node cannot host models.
 
 ## Quick install (script)
 
@@ -31,7 +31,7 @@ ReaperC2 only needs DocumentDB for data — no Kubernetes PVC for the app. Opera
 
 ```bash
 cd deployments/k8s/reaperc2
-chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
+chmod +x deploy.sh reroll.sh ship.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh
 # EKS / ECR (default REAPER_CLUSTER=aws):
 ./deploy-cluster.sh check-local
 ./deploy-cluster.sh help
@@ -53,13 +53,14 @@ REAPER_CLUSTER=k3s ./deploy-cluster.sh apply-ingress
 | Script | Purpose |
 |--------|---------|
 | [`deploy.sh`](deploy.sh) | Wrapper around [`deploy-cluster.sh`](deploy-cluster.sh). Use **`--no-egress`** (default path: do nothing extra) to **remove** `NetworkPolicy/reaperc2-egress-restricted` before `all` / `apply-core` so pod egress is open. Use **`--with-egress`** to **apply** [`examples/networkpolicy-egress-restricted.local.yaml`](examples/networkpolicy-egress-restricted.yaml) after `all` / `apply-core` (you must copy the template to `.local.yaml` and fix **DocumentDB CIDR**). **`teardown`** always deletes that NetworkPolicy after the main teardown. |
-| [`reroll.sh`](reroll.sh) | **`./reroll.sh`** — `rollout restart` only (cluster keeps current Deployment **image** and YAML). **`./reroll.sh --apply-core`** — `kubectl apply -k` overlay first (use after editing `base/deployment.yaml` / manifests in git), then restart. **`--apply-secrets`** / **`--refresh-ecr`** — same as before. |
+| [`reroll.sh`](reroll.sh) | **`./reroll.sh`** — `rollout restart` only (cluster keeps current Deployment **image** and YAML). **`./reroll.sh --apply-core`** — `kubectl apply -k` overlay first, then restart. **`--apply-secrets`** / **`--refresh-ecr`** — same as before. |
+| [`ship.sh`](ship.sh) | **Daily image update:** push ECR **`:latest`** (amd64) then apply-core + rollout. Prefer this over editing image tags. |
 | [`build-push-image.sh`](build-push-image.sh) | **`./build-push-image.sh --arch amd64|arm64|both`** — export AWS creds first (see [Build and push](#build-and-push)), then runs `make` from repo root. |
 
 **Directions (short):**
 
-1. `cd deployments/k8s/reaperc2` and `chmod +x deploy.sh reroll.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh`.
-2. Copy and edit the three secret templates + `base/deployment.yaml` image + optional `../operator-ai.local.yaml` (see [Run from scratch](#run-from-scratch-checklist)).
+1. `cd deployments/k8s/reaperc2` and `chmod +x deploy.sh reroll.sh ship.sh build-push-image.sh deploy-cluster.sh base/fetch-docdb-ca-bundle.sh`.
+2. Copy and edit the three secret templates + optional `../operator-ai.local.yaml` (see [Run from scratch](#run-from-scratch-checklist)). Keep `base/deployment.yaml` on **`:latest`**.
 3. **Deploy without egress restrictions** (typical first bring-up): `./deploy.sh check-local` then **`./deploy.sh all`** or **`./deploy.sh --no-egress all`**. Then `./deploy.sh job-docdb-user`, optional `./deploy.sh job-docdb-init`, then **`./deploy.sh apply-ingress`** when Traefik + cert-manager are ready.
 4. **Deploy with egress restrictions:** copy [`examples/networkpolicy-egress-restricted.yaml`](examples/networkpolicy-egress-restricted.yaml) → `examples/networkpolicy-egress-restricted.local.yaml`, set the **DocumentDB** `ipBlock` CIDR to your VPC (or tighter), add any extra egress rules you need, then **`./deploy.sh --with-egress all`** (or `--with-egress apply-core`). **Only works if your CNI enforces NetworkPolicy** — default EKS/VPC CNI may not; use Calico/Cilium or [AWS VPC CNI network policy mode](https://docs.aws.amazon.com/eks/latest/userguide/network-policies.html) as appropriate.
 5. **Reroll** after image or secret changes: **`./reroll.sh --apply-core`** if you changed `base/deployment.yaml` (or other kustomize files) in git — plain **`./reroll.sh`** only restarts pods on the **already-applied** spec. Combine with **`--apply-secrets`** / **`--refresh-ecr`** as needed.
@@ -80,7 +81,7 @@ Use the **same** Traefik IngressClass (`traefik`), cert-manager, `ingress.yaml`,
 
 ## Run from scratch (checklist)
 
-From the **repo root**, after [`Build and push`](#build-and-push) (export AWS creds, set `AWS_ACCOUNT_ID` / `AWS_REGION`, then `./build-push-image.sh --arch amd64` from `deployments/k8s/reaperc2`):
+From the **repo root**, after [`Build and push`](#build-and-push) (export AWS creds, `ECR_REGISTRY=registry.reaper-ut.com`, then `./build-push-image.sh --arch amd64` from `deployments/k8s/reaperc2`):
 
 **0. Edit local files (do not commit secrets)**
 
@@ -96,7 +97,7 @@ Edit:
 - `examples/documentdb-secret.local.yaml` — host, `username`, `password`, `database`, **`auth_source` (same as `database`)**
 - `examples/documentdb-admin-secret.local.yaml` — DocumentDB **master** user (init Job only)
 - `examples/admin-bootstrap-secret.local.yaml` — first **admin UI** login (only when `operators` collection is empty)
-- `base/deployment.yaml` — container `image:` (ECR on aws profile; any registry on k3s)
+- `base/deployment.yaml` — image stays **`registry.reaper-ut.com/reaperc2:latest`**; do not pin account-specific ECR hosts.
 - `ingress.yaml` / `ingressroute.yaml` — beacon hostname
 
 **1. TLS CA bundle** (once per clone; gitignored)
@@ -187,77 +188,80 @@ Skip the user Job only if your **infra repo** already created the user with exac
 ## Prerequisites
 
 - `kubectl` pointed at your cluster (`aws eks update-kubeconfig ...` for EKS, or your k3s kubeconfig)
-- ReaperC2 image built and pushed to ECR (see [Build and push](#build-and-push); export `AWS_*` creds and set `AWS_ACCOUNT_ID` to match `base/deployment.yaml`)
+- ReaperC2 image built and pushed to `registry.reaper-ut.com` (see [Build and push](#build-and-push))
 - DocumentDB cluster endpoint and application DB user (`api_user` / `api_db` or your naming)
 - Traefik installed with an `IngressClass` named `traefik` (adjust manifests if yours differs)
 
 ## Build and push
 
-Build the image from this directory with [`build-push-image.sh`](build-push-image.sh), or from the repo root with `make`. Both use the same Makefile targets and ECR settings.
+Build the image from this directory with [`build-push-image.sh`](build-push-image.sh), or from the repo root with `make`. Both use the same Makefile targets. Default registry is **`registry.reaper-ut.com`**.
 
 ### AWS credentials (export)
 
 Most operators authenticate with **temporary credentials** exported into the shell (SSO login, `aws sts assume-role`, or the AWS access portal). Export all three variables when your keys start with `ASIA` (STS):
 
 ```bash
-# From SSO / access portal / assume-role — paste the three export lines, then:
-unset AWS_PROFILE   # env keys take precedence; avoid a stale profile pointing at the wrong account
+unset AWS_PROFILE
 
-export AWS_ACCOUNT_ID=235360402887   # must match base/deployment.yaml ECR host (not the Makefile placeholder)
-export AWS_REGION=us-east-1            # must match the region in your ECR URI
+export AWS_REGION=us-east-1
+export ECR_REGISTRY=registry.reaper-ut.com
+export ECR_REPOSITORY=reaperc2
 
 export AWS_ACCESS_KEY_ID="ASIA..."
 export AWS_SECRET_ACCESS_KEY="..."
 export AWS_SESSION_TOKEN="..."         # required for temporary creds; omit only for long-lived IAM user keys (AKIA…)
-```
 
-Verify the account matches before pushing:
-
-```bash
 aws sts get-caller-identity
-# Account should equal AWS_ACCOUNT_ID and the numeric prefix in base/deployment.yaml image:
-#   235360402887.dkr.ecr.us-east-1.amazonaws.com/reaperc2:...
+
+aws ecr get-login-password --region "${AWS_REGION}" | \
+  docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 ```
 
 **Alternative — named profile** (no manual export): `make build AWS_CLI_PROFILE=my-sso` or `./build-push-image.sh --arch amd64 AWS_CLI_PROFILE=my-sso`. See [`scripts/aws-for-make.sh`](../../../scripts/aws-for-make.sh) for auth precedence.
 
-### Build and push to ECR
+### Build and push
 
-From **`deployments/k8s/reaperc2`** (recommended):
+**Daily (recommended):** push `:latest` and restart pods so `imagePullPolicy: Always` pulls the new digest.
 
 ```bash
 cd deployments/k8s/reaperc2
-chmod +x build-push-image.sh
+chmod +x ship.sh build-push-image.sh
+./ship.sh                 # amd64, tag latest, apply-core + rollout
+# ./ship.sh --arch both
+# ./ship.sh --push-only
+# ./ship.sh --deploy-only   # already pushed
+```
+
+Rollback: the same push also tags the git short SHA (`registry.reaper-ut.com/reaperc2:<sha>`).
+
+Lower-level (same Makefile):
+
+```bash
 ./build-push-image.sh --arch amd64    # EKS x86_64 nodes
 # ./build-push-image.sh --arch arm64  # Graviton / ARM k3s
 # ./build-push-image.sh --arch both     # multi-arch manifest
+# From repo root: make build-amd64    # IMAGE_TAG defaults to latest
+# Pin a release: IMAGE_TAG=v1.0.0 make build-amd64   # also aliases :latest
 ```
 
-From the **repo root** (same result):
-
-```bash
-make build-amd64
-# Or: make build (amd64 + arm64 manifest)
-# Pin a tag: IMAGE_TAG=v1.0.0 make build-amd64
-```
-
-Requires Docker with **buildx**, the **AWS CLI**, and ECR permissions (`ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, etc.). The Makefile runs `git submodule update --init --recursive` before build so Scythe matches this repo.
+Requires Docker with **buildx**, the **AWS CLI**, and permission to `ecr:GetAuthorizationToken` (login password). The Makefile runs `git submodule update --init --recursive` before build so Scythe matches this repo.
 
 | Target / script | Purpose |
 |-----------------|---------|
+| `./ship.sh` | Push `:latest` (default amd64) + apply overlay + rollout |
 | `./build-push-image.sh --arch amd64` | Push `...:$(IMAGE_TAG)-amd64` and tag manifest `:$(IMAGE_TAG)` (amd64 only) |
 | `./build-push-image.sh --arch arm64` | Push arm64 only |
 | `./build-push-image.sh --arch both` | Multi-arch manifest at `:$(IMAGE_TAG)` |
-| `make build-local` | Load single-arch image `reaperc2:local` locally (no ECR push) |
+| `make build-local` | Load single-arch image `reaperc2:local` locally (no registry push) |
 
-Variables: `AWS_ACCOUNT_ID`, `AWS_REGION`, `ECR_REPOSITORY` (default `reaperc2`), `IMAGE_TAG` (default short git SHA), `SCYTHE_GIT_REF`. Run `make help` for defaults.
+Variables: `ECR_REGISTRY` (default `registry.reaper-ut.com`), `ECR_REPOSITORY` (default `reaperc2`), `IMAGE_TAG` (default **`latest`**), `AWS_REGION`, `SCYTHE_GIT_REF`. Run `make help` for defaults.
 
-After a successful push, confirm `base/deployment.yaml` `image:` matches the URI you built (account, region, repository, tag). Then roll out: `./reroll.sh --apply-core`.
+After a successful push, pods only pull when they are **recreated**. `./ship.sh` does that. `./reroll.sh` restarts without pushing.
 
 | Build symptom | Likely cause |
 |---------------|--------------|
-| `403 Forbidden` pushing to ECR | `AWS_ACCOUNT_ID` still at Makefile default `123456789012`, or exported creds are for a different account than the ECR registry. Run `aws sts get-caller-identity` and set `AWS_ACCOUNT_ID` to that account (or fix `deployment.yaml`). |
-| `Login Succeeded` then push fails | Same as above — login and push target different accounts/regions. |
+| `403 Forbidden` pushing | Docker not logged in to `ECR_REGISTRY`, or creds cannot push to that registry. Re-run the `get-login-password \| docker login` command. |
+| `Login Succeeded` then push fails | Login host and `ECR_REGISTRY` used by `make` differ. Export `ECR_REGISTRY=registry.reaper-ut.com`. |
 | `error: AWS_PROFILE=… looks like an account id` | You set `AWS_PROFILE` to a 12-digit account id. `unset AWS_PROFILE` and use the three `export` lines, or set `AWS_PROFILE` to a **profile name** from `~/.aws/config`. |
 
 ## Configure before apply

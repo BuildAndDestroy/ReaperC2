@@ -28,7 +28,7 @@ Shows all engagement beacons and commands waiting for the next heartbeat. **Refr
 
 ## Files
 
-Lists **file artifacts**: operator-staged uploads and files **downloaded from beacons** via the `download` built-in. Stored under `REAPER_ARTIFACT_DIR` (default `./data/reaper_artifacts`). Download via `GET /api/beacon-artifacts/{id}/file`.
+Lists **file artifacts**: operator-staged uploads and files **downloaded from beacons** via the `download` built-in. Metadata is in MongoDB collection `file_artifacts`; bytes are stored in the same database as GridFS (`reaper_artifacts.files` / `reaper_artifacts.chunks`) so they survive pod recycles and are shared across replicas. Download via `GET /api/beacon-artifacts/{id}/file`.
 
 ## Output history
 

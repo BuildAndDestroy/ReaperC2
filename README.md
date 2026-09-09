@@ -123,7 +123,6 @@ The process serves **two HTTP listeners**: the **beacon API** (implants / Scythe
 | `BEACON_PIVOT_PROXY` | Optional default `host:port` for Scythe `--proxy` when the beacon has a **parent** (pivot). Per-beacon override: **Pivot proxy** field or `pivot_proxy` in the generate API. |
 | `SCYTHE_SRC` | Optional absolute path to [Scythe](https://github.com/BuildAndDestroy/Scythe) (`go.mod` + `./cmd`). If unset, ReaperC2 searches `REAPERC2_ROOT/third_party/Scythe`, then paths next to the **running binary** (covers `/root/cmd/ReaperC2` → `/root/third_party/Scythe` in Docker), then `Getwd()/third_party/Scythe`. |
 | `REAPERC2_ROOT` | Optional; if set, Scythe is `$REAPERC2_ROOT/third_party/Scythe`. Sample Docker Compose / K8s YAML sets `/root` for the default image; **not strictly required** if the binary path alone resolves correctly. |
-| `REAPER_ARTIFACT_DIR` | Directory for staged operator uploads and files pulled from beacons via Scythe’s `download` built-in (default `./data/reaper_artifacts`). Metadata is in MongoDB collection `file_artifacts`. |
 | `ADMIN_SESSION_TTL_HOURS` | Server-side session lifetime (default `168`). |
 | `ADMIN_COOKIE_SECURE` | Set to `true` if the admin UI is only served over HTTPS (adds `Secure` on session cookies). |
 | `ADMIN_DISABLE` | Set to `1` to run **only** the beacon listener (no admin port). |
@@ -139,7 +138,7 @@ Open `https://<host>:8443` (or `http://` locally; `/` redirects to **Engagements
 |------|---------|
 | **Engagements** | Workspaces that scope beacons, commands, reports, topology, notes, and chat; assign operators (admins). |
 | **Beacons** | Generate clients, Scythe Http options, **Scythe.embedded** download (`POST /api/beacons/scythe-embedded`; Go required on server), saved profiles, kill queue. |
-| **Commands** | Queue tasks; stage uploads; view pending queue, artifacts, and output history. |
+| **Commands** | Queue tasks; stage uploads; view pending queue, artifacts, and output history. File bytes persist in MongoDB/DocumentDB GridFS (`reaper_artifacts`). |
 | **Reports** | JSON / CSV / Ghostwriter / ATT&CK Navigator layer exports. |
 | **Topology** | Interactive beacon graph (liveness + pivot chain). |
 | **Notes & ATT&CK** | Engagement notes and MITRE Navigator layer source. |
@@ -166,44 +165,97 @@ With a pivot (parent beacon), the example adds `--proxy <host:port>` (from the f
 
 ### Makefile — AWS ECR (amd64 + arm64)
 
-The root [`Makefile`](Makefile) builds a **multi-arch** image (`linux/amd64` and `linux/arm64`) with Docker **buildx** and pushes to **Amazon ECR**. Use this for EKS on x86 or Graviton nodes.
+The root [`Makefile`](Makefile) builds a **multi-arch** image (`linux/amd64` and `linux/arm64`) with Docker **buildx** and pushes to **`registry.reaper-ut.com`** (override `ECR_REGISTRY` if needed).
 
 **Prerequisites**
 
 - [Docker](https://docs.docker.com/get-docker/) with the **buildx** plugin
-- [AWS CLI](https://aws.amazon.com/cli/) configured (`aws sts get-caller-identity` works)
-- IAM permission to push to ECR (and create the repository if it does not exist)
-- [Git](https://git-scm.com/) (submodule init + default image tag from commit SHA)
+- [AWS CLI](https://aws.amazon.com/cli/) v2 (`aws sts get-caller-identity` works after auth below) — used to mint the registry password
+- [Git](https://git-scm.com/) (submodule init)
 
-**Quick start**
+**Authenticate to the Reaper registry**
+
+Two steps: set AWS CLI variables in the shell, then Docker-login to `registry.reaper-ut.com`. `make build` / `./ship.sh` also login, but you can (and should) do this yourself first.
+
+**1. AWS CLI variables**
 
 ```bash
-# From the repo root — auth via env keys (AWS_PROFILE is ignored when these are set):
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-# export AWS_SESSION_TOKEN=...   # if using temporary creds
+unset AWS_PROFILE
 
-make build
+export AWS_REGION=us-east-1
+export ECR_REPOSITORY=reaperc2
+export ECR_REGISTRY=registry.reaper-ut.com
+
+# Temporary creds from SSO / access portal / assume-role (keys start with ASIA):
+export AWS_ACCESS_KEY_ID="ASIA..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_SESSION_TOKEN="..."
+# IAM user keys (AKIA…): omit AWS_SESSION_TOKEN.
+
+aws sts get-caller-identity
 ```
 
-Or a named profile: `make build AWS_CLI_PROFILE=your-sso-profile` (do not set `AWS_PROFILE` to the 12-digit account id; use `AWS_ACCOUNT_ID` in the Makefile for that).
+Named profile instead of key exports: `aws sso login --profile my-sso`, then `export AWS_PROFILE=my-sso` (profile **name**, not a 12-digit account id).
 
-That runs `git submodule update --init --recursive`, logs in to ECR, builds **amd64 and arm64 separately** (then merges into one manifest), and pushes:
+**2. Docker login**
 
-`123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:<git-short-sha>`
+```bash
+aws ecr get-login-password --region "${AWS_REGION}" | \
+  docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+```
 
-On Apple Silicon, `go mod download` inside Docker buildx often crashes (Go SIGSEGV under QEMU). **`make build`** cross-compiles on your Mac (`make vendor` + `make build-binaries`), then Docker only packages the image (`Dockerfile.pack`). Use **`make build-docker`** on native Linux CI after **`make vendor`** (full compile inside Docker with vendored modules).
+Expect `Login Succeeded`. Then push (`make build-amd64`) and deploy (step 3).
 
-**Release tag**
+The cluster pull secret is `reaperc2-myregistrykey` (`./deploy-cluster.sh ecr-secret`), with `--docker-server=registry.reaper-ut.com`.
+
+**3. Deploy (cluster already running)**
+
+Kubernetes does **not** watch `:latest`. After a successful push to `registry.reaper-ut.com/reaperc2:latest`, apply the overlay and restart pods so `imagePullPolicy: Always` pulls the new digest.
+
+`kubectl` must be pointed at the EKS cluster (`aws eks update-kubeconfig` if needed). DocumentDB secrets and the first `./deploy.sh all` are already done for a live cluster — do not re-run `all` or `job-docdb-user`.
+
+```bash
+cd deployments/k8s/reaperc2
+
+# Shortcut (apply overlay + rollout restart + wait):
+./reroll.sh --apply-core
+# same thing: ./ship.sh --deploy-only
+
+# Or raw kubectl:
+kubectl apply -k overlays/aws-ecr
+kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns
+kubectl rollout status deployment/reaperc2-deployment -n reaperc2-ns --timeout=300s
+kubectl get pods -n reaperc2-ns -o wide
+```
+
+Pods should become `Running` on a new age. Image on the pod should be `registry.reaper-ut.com/reaperc2:latest`. Reconnect admin with:
+
+```bash
+kubectl port-forward -n reaperc2-ns deployment/reaperc2-deployment 8443:8443
+```
+
+Build **and** deploy in one shot (rebuilds even if you just pushed): `./ship.sh`.
+
+**Daily loop (always `:latest`)**
+
+```bash
+# after AWS vars + docker login above
+make build-amd64                          # or: ./ship.sh --push-only
+cd deployments/k8s/reaperc2 && ./reroll.sh --apply-core
+```
+
+On Apple Silicon, `go mod download` inside Docker buildx often crashes (Go SIGSEGV under QEMU). **`make build`** / **`./ship.sh`** cross-compile on your Mac (`make vendor` + `make build-binaries`), then Docker only packages the image (`Dockerfile.pack`). Use **`make build-docker`** on native Linux CI after **`make vendor`**.
+
+**Pin a release tag** (still also aliases `:latest` and the git SHA):
 
 ```bash
 make build IMAGE_TAG=v1.0.0
 ```
 
-**Other accounts or regions**
+**Other registry hosts**
 
 ```bash
-make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reaperc2
+make build ECR_REGISTRY=registry.example.com AWS_REGION=us-east-1
 ```
 
 **Makefile targets**
@@ -211,33 +263,36 @@ make build AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-west-2 ECR_REPOSITORY=reape
 | Target | Description |
 |--------|-------------|
 | `make help` | List targets and current `IMAGE` |
-| `make build` | Host cross-compile + multi-arch ECR push (recommended on Mac) |
+| `make build` | Host cross-compile + multi-arch push to `ECR_REGISTRY` (recommended on Mac) |
 | `make build-docker` | Full Docker build with vendored modules (Linux CI) |
 | `make build-binaries` | Only `bin/linux-amd64` and `bin/linux-arm64/ReaperC2` |
 | `make vendor` | `go mod vendor` (required before `build-docker`) |
 | `make push` | Same as `make build` |
-| `make build-amd64` | Push only `...:$(IMAGE_TAG)-amd64` |
+| `make build-amd64` | Push only `...:$(IMAGE_TAG)-amd64` (default tag `latest`) |
 | `make build-arm64` | Push only `...:$(IMAGE_TAG)-arm64` |
-| `make build-local` | Build `reaperc2:local` for your machine (`--load`, no ECR) |
-| `make ecr-login` | ECR docker login only |
-| `make ecr-create-repo` | Create the ECR repository if missing |
+| `make build-local` | Build `reaperc2:local` for your machine (`--load`, no registry) |
+| `make ecr-login` | `get-login-password` → `docker login $(ECR_REGISTRY)` |
+| `make ecr-create-repo` | Create the AWS ECR repository if `ECR_REGISTRY` is an `*.dkr.ecr.*` host |
+| [`./ship.sh`](deployments/k8s/reaperc2/ship.sh) | Push `:latest` (amd64) + apply-core + rollout |
 
 **Variables** (override on the command line or in the environment)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AWS_ACCOUNT_ID` | `123456789012` | ECR registry account (override with your account) |
-| `AWS_REGION` | `us-east-1` | ECR region |
-| `ECR_REPOSITORY` | `reaperc2` | Repository name |
-| `IMAGE_TAG` | `git rev-parse --short HEAD` | Image tag (`latest` if not in a git repo) |
+| `ECR_REGISTRY` | `registry.reaper-ut.com` | Docker login and push host |
+| `ECR_REPOSITORY` | `reaperc2` | Repository name (`registry.reaper-ut.com/reaperc2:latest`) |
+| `IMAGE_TAG` | `latest` | Image tag; every push also aliases the git SHA, and aliases `:latest` if you override this |
+| `AWS_REGION` | `us-east-1` | Region for `aws ecr get-login-password` |
 | `SCYTHE_GIT_REF` | `main` | Branch/tag when the Dockerfile must clone Scythe (submodule preferred) |
-| `AWS_CLI_PROFILE` | (unset) | Optional `aws --profile` for ECR login; env `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` take precedence |
+| `AWS_ACCESS_KEY_ID` | (unset) | Access key (`ASIA…` STS or `AKIA…` IAM user) |
+| `AWS_SECRET_ACCESS_KEY` | (unset) | Secret key paired with `AWS_ACCESS_KEY_ID` |
+| `AWS_SESSION_TOKEN` | (unset) | **Required** for temporary/`ASIA` creds; omit for IAM user keys |
+| `AWS_CLI_PROFILE` | (unset) | Named `aws --profile` for registry login; takes precedence over env keys |
+| `AWS_PROFILE` | (unset) | Shell profile if no `AWS_CLI_PROFILE` and no env keys. Must be a profile **name**, never an account id. Ignored when `AWS_ACCESS_KEY_ID` is set. |
 
 **Deploy to EKS after push**
 
-1. Set the image in [`deployments/k8s/reaperc2/base/deployment.yaml`](deployments/k8s/reaperc2/base/deployment.yaml) to the tag you pushed, e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/reaperc2:v1.0.0` (use your `AWS_ACCOUNT_ID`).
-2. Follow [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#quick-install-script): run [`deployments/k8s/reaperc2/deploy.sh`](deployments/k8s/reaperc2/deploy.sh) `all` (or [`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh) `all`), optionally with **`--no-egress`** / **`--with-egress`**; or manually `fetch-ca`, secrets, `kubectl apply -k deployments/k8s/AWS` (legacy shim) or `kubectl apply -k deployments/k8s/reaperc2/overlays/aws-ecr`, DocumentDB Jobs, then `apply-ingress` when Traefik/cert-manager are ready. After you edit `base/deployment.yaml` (new image tag), use [`reroll.sh --apply-core`](deployments/k8s/reaperc2/reroll.sh) or **`./deploy.sh apply-core`** so the cluster picks up the manifest; **`./reroll.sh`** alone only restarts pods on the current spec.
-3. Roll out: `kubectl rollout restart deployment/reaperc2-deployment -n reaperc2-ns`
+First install: follow [`deployments/k8s/reaperc2/README.md`](deployments/k8s/reaperc2/README.md#quick-install-script) (`./deploy.sh all`, DocumentDB Jobs, `apply-ingress`). After that, **do not edit the image tag** — keep `…/reaperc2:latest` and run [`./ship.sh`](deployments/k8s/reaperc2/ship.sh).
 
 ### Docker build (single arch, any registry)
 
@@ -332,24 +387,17 @@ Configure **`BEACON_PUBLIC_BASE_URL`** (and/or each beacon’s **Beacon C2 base 
 
 | Path | Use when |
 |------|----------|
-| [`deployments/k8s/`](deployments/k8s/) | EKS or **k3s** + **DocumentDB** + Traefik/cert-manager ([`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh), [`deploy.sh`](deployments/k8s/reaperc2/deploy.sh), [`reroll.sh`](deployments/k8s/reaperc2/reroll.sh); quick index [`deployments/k8s/DEPLOY.md`](deployments/k8s/DEPLOY.md); `kubectl apply -k deployments/k8s/AWS` still works as **aws-ecr** shim) |
+| [`deployments/k8s/`](deployments/k8s/) | EKS or **k3s** + **DocumentDB** + Traefik/cert-manager ([`ship.sh`](deployments/k8s/reaperc2/ship.sh), [`deploy-cluster.sh`](deployments/k8s/reaperc2/deploy-cluster.sh), [`deploy.sh`](deployments/k8s/reaperc2/deploy.sh), [`reroll.sh`](deployments/k8s/reaperc2/reroll.sh); quick index [`deployments/k8s/DEPLOY.md`](deployments/k8s/DEPLOY.md); `kubectl apply -k deployments/k8s/AWS` still works as **aws-ecr** shim) |
 | [`deployments/k8s/OnPrem/`](deployments/k8s/OnPrem/) | In-cluster MongoDB |
 | [`deployments/k8s/full-deployment.yaml`](deployments/k8s/full-deployment.yaml) | Sample all-in-one with in-cluster Mongo |
 
 **AWS deploy (summary)**
 
 ```bash
-make build   # or: make build IMAGE_TAG=v1.0.0
-# Edit deployments/k8s/reaperc2/base/deployment.yaml (ECR image), ingress hostnames, examples/documentdb-secret.yaml
-
 cd deployments/k8s/reaperc2
-./fetch-docdb-ca-bundle.sh
-# Prefer: ./deploy-cluster.sh all   (then job-docdb-user / job-docdb-init / apply-ingress)
-kubectl apply -f namespace.yaml -f examples/documentdb-secret.yaml
-# ECR pull secret + docdb jobs — see AWS README
-kubectl apply -k .
-kubectl apply -f docdb-init-job.yaml
-kubectl wait -n reaperc2-ns job/docdb-init --for=condition=complete --timeout=120s
+# First time: ./deploy.sh all  then job-docdb-user / job-docdb-init / apply-ingress
+# Every image update:
+./ship.sh
 ```
 
 * Point **Ingress / IngressRoute** only at Service port **8080** (beacon).

@@ -37,7 +37,7 @@ REGISTRY_PASSWORD='your-password-here'
 | `REAPERC2_NAMESPACE` | Default `reaperc2-ns` |
 | `KUBECONFIG` | Optional kubeconfig path |
 
-**DocumentDB / ECR builds** use [`k8s/reaperc2/build-push-image.sh`](k8s/reaperc2/build-push-image.sh) and the Makefile (`AWS_ACCOUNT_ID`, `AWS_REGION`, etc.) — not `config.env`.
+**DocumentDB / registry builds** use [`k8s/reaperc2/build-push-image.sh`](k8s/reaperc2/build-push-image.sh) and the Makefile (`ECR_REGISTRY=registry.reaper-ut.com`, `AWS_REGION`, etc.) — not `config.env`.
 
 ---
 

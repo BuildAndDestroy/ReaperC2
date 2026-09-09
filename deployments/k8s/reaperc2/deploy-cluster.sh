@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage: ./deploy-cluster.sh <command> [args]
 
-Also see ./deploy.sh (optional --with-egress / --no-egress) and ./reroll.sh (rollout + optional secrets/ECR refresh).
+Also see ./deploy.sh, ./reroll.sh, and ./ship.sh (push ECR :latest + restart).
 
 Commands:
   help              Show this help.
@@ -54,10 +54,10 @@ Commands:
   teardown          Remove app from cluster (same as README Teardown): kustomize stack, ingress, jobs, sample secret apply, ollama stack. Does not delete the namespace or DocumentDB.
 
 Environment:
-  REAPER_CLUSTER         aws (default) or k3s — picks Kustomize overlay and ECR checks.
+  REAPER_CLUSTER         aws (default) or k3s — picks Kustomize overlay.
   REAPER_NS              Namespace (default: reaperc2-ns)
-  REAPER_ECR_ACCOUNT     AWS account id for ECR (optional if deployment.yaml image is a real *.dkr.ecr.<region>.amazonaws.com URI)
-  AWS_REGION             ECR region for aws ecr get-login-password (optional if derivable from deployment image)
+  ECR_REGISTRY           Registry host for ecr-secret (default: host of base/deployment.yaml image, usually registry.reaper-ut.com)
+  AWS_REGION             Region for aws ecr get-login-password (default: us-east-1)
   SKIP_ECR_SECRET        Set to 1 to skip ecr-secret in "all" (aws). On k3s, ecr-secret is skipped unless REAPER_ECR_SECRET=1.
   REAPER_ECR_SECRET      Set to 1 on k3s to run ecr-secret in "all" (same as aws flow).
   SKIP_OLLAMA            Set to 1 to skip in-cluster Ollama on apply-ollama / all (Operator AI can still use cloud providers).
@@ -146,24 +146,11 @@ cmd_apply_secrets() {
   fi
 }
 
-ecr_account_from_deployment() {
+registry_host_from_deployment() {
   local img
   img="$(grep -E '^\s+image:\s' "$BASE/deployment.yaml" | head -1 | awk '{print $2}')"
-  if [[ "$img" =~ ^([0-9]{12})\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com/ ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return
-  fi
-  return 1
-}
-
-ecr_region_from_deployment() {
-  local img
-  img="$(grep -E '^\s+image:\s' "$BASE/deployment.yaml" | head -1 | awk '{print $2}')"
-  if [[ "$img" =~ \.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return
-  fi
-  return 1
+  [[ -n "$img" ]] || return 1
+  echo "${img%%/*}"
 }
 
 require_deploy_prereqs() {
@@ -201,9 +188,9 @@ EOM
   [[ -x "$BASE/fetch-docdb-ca-bundle.sh" ]] || die "run: chmod +x $BASE/fetch-docdb-ca-bundle.sh"
 
   if [[ "${REAPER_CLUSTER}" == "aws" ]]; then
-    local acct
-    acct="$(ecr_account_from_deployment || true)"
-    [[ -n "$acct" && "$acct" != "123456789012" ]] || die "aws profile: base/deployment.yaml image must be a real ECR URI (replace placeholder account 123456789012 with your AWS account id), or use REAPER_CLUSTER=k3s for non-ECR images."
+    local img
+    img="$(grep -E '^\s+image:\s' "$BASE/deployment.yaml" | head -1 | awk '{print $2}')"
+    [[ -n "$img" ]] || die "aws profile: base/deployment.yaml is missing image:"
   fi
 }
 
@@ -214,22 +201,19 @@ cmd_check_local() {
 
 cmd_ecr_secret() {
   require_deploy_prereqs
-  [[ "${REAPER_CLUSTER}" == "aws" || "${REAPER_ECR_SECRET:-0}" == "1" ]] || die "ecr-secret is for ECR pulls. Use REAPER_CLUSTER=aws, or REAPER_ECR_SECRET=1 with k3s."
-  local acct region
-  acct="${REAPER_ECR_ACCOUNT:-}"
-  region="${AWS_REGION:-}"
-  if [[ -z "$acct" ]]; then
-    acct="$(ecr_account_from_deployment || true)"
+  [[ "${REAPER_CLUSTER}" == "aws" || "${REAPER_ECR_SECRET:-0}" == "1" ]] || die "ecr-secret is for registry pulls. Use REAPER_CLUSTER=aws, or REAPER_ECR_SECRET=1 with k3s."
+  local server region
+  server="${ECR_REGISTRY:-}"
+  if [[ -z "$server" ]]; then
+    server="$(registry_host_from_deployment || true)"
   fi
-  [[ -n "$acct" && "$acct" != "123456789012" ]] || die "Set REAPER_ECR_ACCOUNT or fix base/deployment.yaml image to your real ECR URI (not placeholder 123456789012)."
-  if [[ -z "$region" ]]; then
-    region="$(ecr_region_from_deployment || echo us-east-1)"
-  fi
+  [[ -n "$server" ]] || die "set ECR_REGISTRY or put a registry host on base/deployment.yaml image:"
+  region="${AWS_REGION:-us-east-1}"
   command -v aws >/dev/null || die "aws CLI required for ecr-secret"
-  info "ECR docker-registry secret for ${acct}.dkr.ecr.${region}.amazonaws.com"
+  info "docker-registry secret for ${server}"
   "$KUBECTL" create secret docker-registry reaperc2-myregistrykey \
     --namespace="$REAPER_NS" \
-    --docker-server="${acct}.dkr.ecr.${region}.amazonaws.com" \
+    --docker-server="${server}" \
     --docker-username=AWS \
     --docker-password="$(aws ecr get-login-password --region "$region")" \
     --dry-run=client -o yaml | "$KUBECTL" apply -f -

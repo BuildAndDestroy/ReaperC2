@@ -68,6 +68,20 @@ ensureIndex(
   { name: "idx_file_artifacts_client_created" }
 );
 
+// GridFS bucket reaper_artifacts (driver also creates these on first upload).
+ensureCollection("reaper_artifacts.files");
+ensureIndex(
+  "reaper_artifacts.files",
+  { filename: 1, uploadDate: 1 },
+  { name: "idx_reaper_artifacts_files_filename_uploaddate" }
+);
+ensureCollection("reaper_artifacts.chunks");
+ensureIndex(
+  "reaper_artifacts.chunks",
+  { files_id: 1, n: 1 },
+  { unique: true, name: "idx_reaper_artifacts_chunks_files_id_n" }
+);
+
 ensureCollection("beacon_profiles");
 ensureIndex("beacon_profiles", { created_at: -1 }, { name: "idx_beacon_profiles_created_at" });
 
