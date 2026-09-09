@@ -15,7 +15,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/yuin/goldmark v1.7.17
 	go.mongodb.org/mongo-driver v1.17.7
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 )
 
 require (
@@ -41,5 +41,5 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )
