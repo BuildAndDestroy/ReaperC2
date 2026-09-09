@@ -180,7 +180,7 @@ func (s *Server) handleAPIBeaconArtifactFile(w http.ResponseWriter, r *http.Requ
 		jsonError(w, http.StatusForbidden, "artifact not in this engagement")
 		return
 	}
-	data, err := dbconnections.ReadArtifactBytes(oid)
+	data, err := dbconnections.ReadArtifactBytes(ctx, oid)
 	if err != nil {
 		log.Printf("admin: read artifact: %v", err)
 		jsonError(w, http.StatusNotFound, "file missing")

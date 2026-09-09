@@ -6,7 +6,7 @@ Operator AI uses the AWS credential chain when Bedrock is enabled and no static 
 
 1. Enable model access in the Bedrock console for the models you need (e.g. Claude Opus 4.7 inference profile in `us-east-1`).
 
-2. Create an IAM policy from `bedrock-iam-policy.json` (replace `123456789012` with your account ID):
+2. Create an IAM policy from `bedrock-iam-policy.json` (replace `123456789012` in that file with your account ID):
 
    ```bash
    aws iam create-policy \
@@ -23,7 +23,7 @@ Operator AI uses the AWS credential chain when Bedrock is enabled and no static 
      --namespace=reaperc2-ns \
      --name=reaperc2 \
      --role-name reaperc2-bedrock \
-     --attach-policy-arn arn:aws:iam::123456789012:policy/ReaperC2BedrockInvoke \
+     --attach-policy-arn arn:aws:iam::<aws-account-id>:policy/ReaperC2BedrockInvoke \
      --approve \
      --override-existing-serviceaccounts
    ```
@@ -31,7 +31,7 @@ Operator AI uses the AWS credential chain when Bedrock is enabled and no static 
    Or annotate manually after creating the role:
 
    ```yaml
-   eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/reaperc2-bedrock
+   eks.amazonaws.com/role-arn: arn:aws:iam::<aws-account-id>:role/reaperc2-bedrock
    ```
 
 4. Ensure `reaperc2-ai-config` has `REAPER_AI_BEDROCK_USE_IAM: "1"` (set in `../operator-ai.local.yaml`).

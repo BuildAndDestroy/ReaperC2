@@ -1,4 +1,4 @@
-# ReaperC2 container image: build linux/amd64 + linux/arm64 and push to ECR.
+# ReaperC2 container image: build linux/amd64 + linux/arm64 and push to registry.reaper-ut.com.
 #
 # Recommended on Mac (avoids go SIGSEGV under QEMU in buildx):
 #   make build          # cross-compile on host, docker only packages the image
@@ -6,14 +6,14 @@
 # Linux CI / full Docker compile (after `make vendor`):
 #   make build-docker
 #
-# Requires: docker, docker buildx, aws CLI, git. `make build` also needs Go on the host.
+# Requires: docker, docker buildx, aws CLI (for ECR-backed login), git. `make build` also needs Go on the host.
 
-AWS_ACCOUNT_ID ?= 123456789012
 AWS_REGION     ?= us-east-1
 AWS_CLI_PROFILE ?=
-ECR_REGISTRY   ?= $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+ECR_REGISTRY   ?= registry.reaper-ut.com
 ECR_REPOSITORY ?= reaperc2
-IMAGE_TAG      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo latest)
+IMAGE_TAG      ?= latest
+GIT_SHA        ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 SCYTHE_GIT_REF ?= main
 
 IMAGE          := $(ECR_REGISTRY)/$(ECR_REPOSITORY):$(IMAGE_TAG)
@@ -30,21 +30,22 @@ DOCKER_BUILD_ARGS := \
 GO_BUILD_FLAGS := -trimpath -ldflags="-s -w" -mod=vendor
 
 .PHONY: help submodule vendor build-binaries build build-docker build-amd64 build-arm64 build-local push \
-	ecr-login ecr-create-repo setup-buildx
+	ecr-login ecr-create-repo setup-buildx ecr-alias-tags
 
 help:
 	@echo "ReaperC2 ECR image build"
 	@echo ""
+	@echo "  Daily cluster update:  deployments/k8s/reaperc2/ship.sh   (push :latest + restart pods)"
 	@echo "  make build            Host cross-compile + docker package (best on Apple Silicon)"
 	@echo "  make build-docker     Full compile in Docker (needs: make vendor first)"
 	@echo "  make build-binaries   Only compile bin/linux-amd64 and bin/linux-arm64/ReaperC2"
-	@echo "  make build-amd64        Push amd64 image only"
+	@echo "  make build-amd64        Push amd64 image only (:latest by default)"
 	@echo "  make build-arm64        Push arm64 image only"
 	@echo "  deployments/k8s/reaperc2/build-push-image.sh --arch amd64|arm64|both  (wrapper)"
 	@echo "  make vendor             go mod vendor (for build-docker)"
 	@echo ""
 	@echo "AWS: export AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, or AWS_CLI_PROFILE=my-sso"
-	@echo "  IMAGE=$(IMAGE)"
+	@echo "  IMAGE=$(IMAGE)  (override ECR_REGISTRY if not registry.reaper-ut.com)"
 
 submodule:
 	git submodule update --init --recursive
@@ -72,8 +73,12 @@ ecr-login: setup-buildx
 		docker login --username AWS --password-stdin $(ECR_REGISTRY)
 
 ecr-create-repo:
-	@$(AWS_CMD) ecr describe-repositories --repository-names $(ECR_REPOSITORY) --region $(AWS_REGION) >/dev/null 2>&1 || \
-		$(AWS_CMD) ecr create-repository --repository-name $(ECR_REPOSITORY) --region $(AWS_REGION)
+	@case "$(ECR_REGISTRY)" in \
+	  *.dkr.ecr.*.amazonaws.com) \
+	    $(AWS_CMD) ecr describe-repositories --repository-names $(ECR_REPOSITORY) --region $(AWS_REGION) >/dev/null 2>&1 || \
+	    $(AWS_CMD) ecr create-repository --repository-name $(ECR_REPOSITORY) --region $(AWS_REGION) ;; \
+	  *) echo "==> Skip ecr-create-repo (registry is $(ECR_REGISTRY))" ;; \
+	esac
 
 # Host compile + docker pack (no go mod download / go build inside QEMU).
 build: build-binaries ecr-login ecr-create-repo
@@ -95,6 +100,7 @@ build: build-binaries ecr-login ecr-create-repo
 		.
 	@echo "==> Publishing multi-arch manifest $(IMAGE)"
 	docker buildx imagetools create -t $(IMAGE) $(IMAGE_AMD64) $(IMAGE_ARM64)
+	@$(MAKE) ecr-alias-tags
 
 push: build
 
@@ -115,6 +121,18 @@ build-docker: submodule vendor ecr-login ecr-create-repo
 		--push \
 		.
 	docker buildx imagetools create -t $(IMAGE) $(IMAGE_AMD64) $(IMAGE_ARM64)
+	@$(MAKE) ecr-alias-tags
+
+# Extra ECR tags: git SHA (rollback) and :latest (cluster always pulls this).
+ecr-alias-tags:
+	@if [ -n "$(GIT_SHA)" ] && [ "$(IMAGE_TAG)" != "$(GIT_SHA)" ]; then \
+		echo "==> Also tagging $(ECR_REGISTRY)/$(ECR_REPOSITORY):$(GIT_SHA)"; \
+		docker buildx imagetools create -t $(ECR_REGISTRY)/$(ECR_REPOSITORY):$(GIT_SHA) $(IMAGE); \
+	fi
+	@if [ "$(IMAGE_TAG)" != "latest" ]; then \
+		echo "==> Also tagging $(ECR_REGISTRY)/$(ECR_REPOSITORY):latest"; \
+		docker buildx imagetools create -t $(ECR_REGISTRY)/$(ECR_REPOSITORY):latest $(IMAGE); \
+	fi
 
 build-amd64: build-binaries ecr-login ecr-create-repo
 	docker buildx build -f Dockerfile.pack \
@@ -124,6 +142,7 @@ build-amd64: build-binaries ecr-login ecr-create-repo
 		$(DOCKER_BUILD_ARGS) \
 		--push \
 		.
+	@$(MAKE) ecr-alias-tags
 
 build-arm64: build-binaries ecr-login ecr-create-repo
 	docker buildx build -f Dockerfile.pack \
@@ -133,6 +152,7 @@ build-arm64: build-binaries ecr-login ecr-create-repo
 		$(DOCKER_BUILD_ARGS) \
 		--push \
 		.
+	@$(MAKE) ecr-alias-tags
 
 build-local: submodule vendor setup-buildx
 	docker buildx build \

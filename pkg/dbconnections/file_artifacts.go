@@ -1,22 +1,24 @@
 package dbconnections
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
 	collectionFileArtifacts = "file_artifacts"
+	gridFSBucketName        = "reaper_artifacts"
 	// FileArtifactKindStaging is an operator-uploaded blob waiting to be sent to a beacon.
 	FileArtifactKindStaging = "staging"
 	// FileArtifactKindDownload is a file pulled from a beacon via Scythe download.
@@ -26,7 +28,10 @@ const (
 // FileArtifactsCollection stores metadata for staged uploads and beacon downloads.
 var FileArtifactsCollection *mongo.Collection
 
+var fileArtifactsDB *mongo.Database
+
 func initFileArtifactsCollection(db *mongo.Database) {
+	fileArtifactsDB = db
 	FileArtifactsCollection = db.Collection(collectionFileArtifacts)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -35,17 +40,11 @@ func initFileArtifactsCollection(db *mongo.Database) {
 	})
 }
 
-// ArtifactStorageRoot is the on-disk root for file bytes (override with REAPER_ARTIFACT_DIR).
-func ArtifactStorageRoot() string {
-	r := os.Getenv("REAPER_ARTIFACT_DIR")
-	if r != "" {
-		return r
+func artifactBucket() (*gridfs.Bucket, error) {
+	if fileArtifactsDB == nil {
+		return nil, fmt.Errorf("file artifacts storage not initialized")
 	}
-	return filepath.Join(".", "data", "reaper_artifacts")
-}
-
-func artifactPathForID(id primitive.ObjectID) string {
-	return filepath.Join(ArtifactStorageRoot(), "artifacts", id.Hex())
+	return gridfs.NewBucket(fileArtifactsDB, options.GridFSBucket().SetName(gridFSBucketName))
 }
 
 // FileArtifact is metadata for a staged or downloaded file.
@@ -60,33 +59,63 @@ type FileArtifact struct {
 	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
 }
 
-func ensureArtifactDir() error {
-	root := filepath.Join(ArtifactStorageRoot(), "artifacts")
-	return os.MkdirAll(root, 0750)
+func applyBucketWriteDeadline(bucket *gridfs.Bucket, ctx context.Context) {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = bucket.SetWriteDeadline(deadline)
+	}
+}
+
+func applyBucketReadDeadline(bucket *gridfs.Bucket, ctx context.Context) {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = bucket.SetReadDeadline(deadline)
+	}
+}
+
+// writeArtifactBytes stores file bytes in GridFS under the given ObjectID. The GridFS filename is the hex id.
+func writeArtifactBytes(ctx context.Context, id primitive.ObjectID, r io.Reader, maxBytes int64) (int64, error) {
+	bucket, err := artifactBucket()
+	if err != nil {
+		return 0, err
+	}
+	applyBucketWriteDeadline(bucket, ctx)
+	us, err := bucket.OpenUploadStreamWithID(id, id.Hex())
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(us, io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		_ = us.Abort()
+		return 0, err
+	}
+	if n > maxBytes {
+		_ = us.Abort()
+		return 0, fmt.Errorf("file larger than %d bytes", maxBytes)
+	}
+	if err := us.Close(); err != nil {
+		_ = bucket.DeleteContext(ctx, id)
+		return 0, err
+	}
+	return n, nil
+}
+
+func deleteArtifactBytes(ctx context.Context, id primitive.ObjectID) error {
+	bucket, err := artifactBucket()
+	if err != nil {
+		return err
+	}
+	err = bucket.DeleteContext(ctx, id)
+	if err == nil || errors.Is(err, gridfs.ErrFileNotFound) {
+		return nil
+	}
+	return err
 }
 
 // WriteStagingArtifact stores an operator upload for later enqueue as a Scythe upload command.
 func WriteStagingArtifact(ctx context.Context, clientID, originalName string, r io.Reader, maxBytes int64) (*FileArtifact, error) {
-	if err := ensureArtifactDir(); err != nil {
-		return nil, err
-	}
 	id := primitive.NewObjectID()
-	path := artifactPathForID(id)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	n, err := writeArtifactBytes(ctx, id, r, maxBytes)
 	if err != nil {
 		return nil, err
-	}
-	n, err := io.Copy(f, io.LimitReader(r, maxBytes+1))
-	if closeErr := f.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		_ = os.Remove(path)
-		return nil, err
-	}
-	if n > maxBytes {
-		_ = os.Remove(path)
-		return nil, fmt.Errorf("file larger than %d bytes", maxBytes)
 	}
 	doc := FileArtifact{
 		ID:               id,
@@ -102,7 +131,7 @@ func WriteStagingArtifact(ctx context.Context, clientID, originalName string, r 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if _, err := FileArtifactsCollection.InsertOne(ctx, doc); err != nil {
-		_ = os.Remove(path)
+		_ = deleteArtifactBytes(ctx, id)
 		return nil, err
 	}
 	return &doc, nil
@@ -110,12 +139,9 @@ func WriteStagingArtifact(ctx context.Context, clientID, originalName string, r 
 
 // WriteDownloadArtifact stores bytes from a Scythe beacon download result.
 func WriteDownloadArtifact(ctx context.Context, clientID, remotePath string, data []byte) (*FileArtifact, error) {
-	if err := ensureArtifactDir(); err != nil {
-		return nil, err
-	}
 	id := primitive.NewObjectID()
-	path := artifactPathForID(id)
-	if err := os.WriteFile(path, data, 0640); err != nil {
+	n, err := writeArtifactBytes(ctx, id, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
 		return nil, err
 	}
 	doc := FileArtifact{
@@ -123,7 +149,7 @@ func WriteDownloadArtifact(ctx context.Context, clientID, remotePath string, dat
 		ClientID:   clientID,
 		Kind:       FileArtifactKindDownload,
 		RemotePath: remotePath,
-		ByteSize:   int64(len(data)),
+		ByteSize:   n,
 		CreatedAt:  time.Now().UTC(),
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -132,7 +158,7 @@ func WriteDownloadArtifact(ctx context.Context, clientID, remotePath string, dat
 		doc.EngagementID = strings.TrimSpace(bc.EngagementId)
 	}
 	if _, err := FileArtifactsCollection.InsertOne(ctx, doc); err != nil {
-		_ = os.Remove(path)
+		_ = deleteArtifactBytes(ctx, id)
 		return nil, err
 	}
 	return &doc, nil
@@ -150,10 +176,18 @@ func FindFileArtifact(ctx context.Context, id primitive.ObjectID) (*FileArtifact
 	return &doc, nil
 }
 
-// ReadArtifactBytes returns on-disk bytes for an artifact.
-func ReadArtifactBytes(id primitive.ObjectID) ([]byte, error) {
-	path := artifactPathForID(id)
-	return os.ReadFile(path)
+// ReadArtifactBytes returns GridFS bytes for an artifact.
+func ReadArtifactBytes(ctx context.Context, id primitive.ObjectID) ([]byte, error) {
+	bucket, err := artifactBucket()
+	if err != nil {
+		return nil, err
+	}
+	applyBucketReadDeadline(bucket, ctx)
+	var buf bytes.Buffer
+	if _, err := bucket.DownloadToStream(id, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // ListFileArtifactsForClient returns newest artifacts for a beacon (staging + download).
@@ -191,11 +225,10 @@ func DeleteStagingArtifact(ctx context.Context, id primitive.ObjectID) error {
 	if res.DeletedCount == 0 {
 		return mongo.ErrNoDocuments
 	}
-	_ = os.Remove(artifactPathForID(id))
-	return nil
+	return deleteArtifactBytes(ctx, id)
 }
 
-// DeleteArtifactByID removes any artifact row (staging or download) and deletes on-disk bytes if present.
+// DeleteArtifactByID removes any artifact row (staging or download) and deletes GridFS bytes if present.
 func DeleteArtifactByID(ctx context.Context, id primitive.ObjectID) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -206,6 +239,5 @@ func DeleteArtifactByID(ctx context.Context, id primitive.ObjectID) error {
 	if res.DeletedCount == 0 {
 		return mongo.ErrNoDocuments
 	}
-	_ = os.Remove(artifactPathForID(id))
-	return nil
+	return deleteArtifactBytes(ctx, id)
 }

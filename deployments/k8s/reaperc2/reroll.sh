@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Restart ReaperC2 pods and optionally refresh in-cluster config before restart.
-# Typical uses: new image already in deployment.yaml / new ECR tag, rotated AI secrets, updated operator-ai.local.yaml.
+# Typical uses: new :latest already in ECR (prefer ./ship.sh), rotated AI secrets, updated operator-ai.local.yaml.
 #
 #   ./reroll.sh                      # rollout restart + wait (same image/spec already in the cluster)
 #   ./reroll.sh --apply-core         # kubectl apply -k overlay (picks up edited base/deployment.yaml, ConfigMaps, etc.), then restart
@@ -34,7 +34,7 @@ Environment:
 
 Examples:
   ./reroll.sh
-  ./reroll.sh --apply-core                    # new image: line in base/deployment.yaml + this + build/push first
+  ./reroll.sh --apply-core                    # apply overlay + restart (no image build; use ./ship.sh to push)
   kubectl apply -f examples/documentdb-secret.local.yaml && ./reroll.sh
   ./reroll.sh --apply-secrets
   ./reroll.sh --refresh-ecr

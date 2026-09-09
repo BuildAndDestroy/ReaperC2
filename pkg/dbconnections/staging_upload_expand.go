@@ -42,7 +42,7 @@ func expandStagingUploadCommands(ctx context.Context, clientID string, cmds []in
 		if err != nil || meta.Kind != FileArtifactKindStaging || meta.ClientID != clientID {
 			return nil, fmt.Errorf("upload: staging artifact not found for this beacon")
 		}
-		raw, err := ReadArtifactBytes(oid)
+		raw, err := ReadArtifactBytes(ctx, oid)
 		if err != nil {
 			return nil, fmt.Errorf("upload: read staging file: %w", err)
 		}

@@ -7,7 +7,7 @@
 #   3. AWS_PROFILE — named profile from the shell
 #   4. Default credential chain (instance role, SSO cache, etc.)
 #
-# Account id belongs in Makefile AWS_ACCOUNT_ID, not in AWS_PROFILE.
+# Do not put an AWS account id in AWS_PROFILE.
 
 set -euo pipefail
 
