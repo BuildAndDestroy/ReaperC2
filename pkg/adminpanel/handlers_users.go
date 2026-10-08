@@ -98,6 +98,9 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 		rows.WriteString(template.HTMLEscapeString(op.CreatedAt.UTC().Format(time.RFC3339)))
 		rows.WriteString(`</td><td style="white-space:nowrap">`)
 		if op.Username != u {
+			rows.WriteString(`<button type="button" class="btn btn-secondary btn-tiny" data-reset-pw="`)
+			rows.WriteString(template.HTMLEscapeString(op.Username))
+			rows.WriteString(`">Reset password</button> `)
 			if dbconnections.OperatorIsDisabled(&op) {
 				rows.WriteString(`<button type="button" class="btn btn-secondary btn-tiny" data-enable="`)
 				rows.WriteString(template.HTMLEscapeString(op.Username))
@@ -108,7 +111,7 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 				rows.WriteString(`">Disable</button>`)
 			}
 		} else {
-			rows.WriteString(`<span class="muted">—</span>`)
+			rows.WriteString(`<span class="muted">Use Account for your password</span>`)
 		}
 		rows.WriteString("</td></tr>")
 	}
@@ -119,7 +122,7 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 	selfQuoted, _ := json.Marshal(u)
 	body := `
 <h1>Users</h1>
-<p class="muted">Create portal accounts and change roles. <strong>Disabled</strong> users cannot sign in; their sessions end immediately. You cannot disable yourself or change your own role. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
+<p class="muted">Create portal accounts, change roles, and reset forgotten passwords. <strong>Disabled</strong> users cannot sign in; their sessions end immediately. You cannot disable yourself or change your own role. Password resets sign the user out and can clear MFA so they can enroll again. <strong>Admin</strong> may manage users and <strong>All logs</strong>; <strong>Operator</strong> may use beacons, commands, reports, topology, chat, and <strong>Engagement logs</strong> for the selected engagement.</p>
 <div class="card">
   <h2>Create user</h2>
   <label>Username</label>
@@ -140,6 +143,24 @@ func (s *Server) handleUsersPage(w http.ResponseWriter, r *http.Request) {
   <h2>Accounts</h2>
   <table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>` + rows.String() + `</tbody></table>
 </div>
+<dialog id="resetPwDlg" class="app-dialog">
+  <h2>Reset password</h2>
+  <p class="muted" id="resetPwWho" style="margin:0 0 .75rem"></p>
+  <label for="resetPwNew">New password</label>
+  <input id="resetPwNew" type="password" autocomplete="new-password">
+  <p class="muted" style="margin:.35rem 0 0;font-size:.82rem">At least 10 characters.</p>
+  <label for="resetPwConfirm">Confirm password</label>
+  <input id="resetPwConfirm" type="password" autocomplete="new-password">
+  <label class="dlg-check">
+    <input id="resetPwClearTotp" type="checkbox" checked>
+    <span>Clear MFA (TOTP) so they can re-enroll — recommended when the password was forgotten</span>
+  </label>
+  <p id="resetPwMsg" class="dlg-msg muted"></p>
+  <div class="dlg-actions">
+    <button type="button" class="btn" id="resetPwSave">Reset password</button>
+    <button type="button" class="btn btn-secondary" id="resetPwCancel">Cancel</button>
+  </div>
+</dialog>
 <script>
 window.__USERS_SELF__ = ` + string(selfQuoted) + `;
 document.getElementById('createu').onclick = async function() {
@@ -166,6 +187,60 @@ async function patchUser(username, body) {
   if (!r.ok) { alert(j.error || r.statusText); return false; }
   return true;
 }
+(function() {
+  var dlg = document.getElementById('resetPwDlg');
+  var who = document.getElementById('resetPwWho');
+  var pwNew = document.getElementById('resetPwNew');
+  var pwConfirm = document.getElementById('resetPwConfirm');
+  var clearTotp = document.getElementById('resetPwClearTotp');
+  var msg = document.getElementById('resetPwMsg');
+  var targetUser = '';
+  function showMsg(text, isErr) {
+    msg.textContent = text || '';
+    msg.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
+  }
+  function openReset(username) {
+    targetUser = username;
+    who.textContent = 'Set a temporary password for ' + username + '. They will be signed out and must log in again.';
+    pwNew.value = '';
+    pwConfirm.value = '';
+    clearTotp.checked = true;
+    showMsg('', false);
+    if (dlg.showModal) dlg.showModal();
+    else alert('Use a browser that supports dialogs.');
+    setTimeout(function() { pwNew.focus(); }, 0);
+  }
+  function closeReset() {
+    if (dlg.open) dlg.close();
+    targetUser = '';
+  }
+  document.getElementById('resetPwCancel').onclick = closeReset;
+  dlg.addEventListener('cancel', function() { targetUser = ''; });
+  document.getElementById('resetPwSave').onclick = async function() {
+    var pw = pwNew.value;
+    if (pw.length < 10) { showMsg('Password must be at least 10 characters.', true); return; }
+    if (pw !== pwConfirm.value) { showMsg('Passwords do not match.', true); return; }
+    if (!targetUser) return;
+    showMsg('Saving…', false);
+    var r = await fetch('/api/users/' + encodeURIComponent(targetUser) + '/password', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw, clear_totp: !!clearTotp.checked })
+    });
+    var j = await r.json().catch(function() { return {}; });
+    if (!r.ok) { showMsg(j.error || r.statusText, true); return; }
+    showMsg('Password reset.' + (j.clear_totp ? ' MFA cleared.' : '') + ' They must sign in again.', false);
+    setTimeout(closeReset, 900);
+  };
+  document.querySelectorAll('[data-reset-pw]').forEach(function(btn) {
+    btn.onclick = function() {
+      var name = btn.getAttribute('data-reset-pw');
+      if (!name || name === window.__USERS_SELF__) return;
+      openReset(name);
+    };
+  });
+})();
 document.querySelectorAll('[data-disable]').forEach(function(btn) {
   btn.onclick = async function() {
     var name = btn.getAttribute('data-disable');
@@ -268,6 +343,87 @@ func (s *Server) handleAPICreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "username": req.Username, "role": role})
+}
+
+func (s *Server) handleAPIUserPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	adminUser, ok := s.requireAdminAPI(w, r)
+	if !ok {
+		return
+	}
+	target := strings.TrimSpace(mux.Vars(r)["username"])
+	if target == "" || !isValidUsername(target) {
+		jsonError(w, http.StatusBadRequest, "username required")
+		return
+	}
+	if strings.EqualFold(target, adminUser) {
+		jsonError(w, http.StatusBadRequest, "use Account settings to change your own password")
+		return
+	}
+	var req struct {
+		Password  string `json:"password"`
+		ClearTotp *bool  `json:"clear_totp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if len(req.Password) < 10 {
+		jsonError(w, http.StatusBadRequest, "password must be at least 10 characters")
+		return
+	}
+	clearTotp := true
+	if req.ClearTotp != nil {
+		clearTotp = *req.ClearTotp
+	}
+	hash, err := HashOperatorPassword(req.Password)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "hash error")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if _, err := dbconnections.FindOperatorByUsername(ctx, target); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			jsonError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if err := dbconnections.UpdateOperatorPasswordHash(ctx, target, hash); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			jsonError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		log.Printf("admin: reset password: %v", err)
+		jsonError(w, http.StatusInternalServerError, "failed to reset password")
+		return
+	}
+	_ = dbconnections.DeleteSessionsForUsername(ctx, target)
+	_ = dbconnections.DeleteMFAChallengesForUser(ctx, target)
+	if clearTotp {
+		if err := dbconnections.DisableOperatorTotp(ctx, target); err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+			log.Printf("admin: clear totp after password reset: %v", err)
+			jsonError(w, http.StatusInternalServerError, "password updated but failed to clear MFA")
+			return
+		}
+	}
+	if aerr := dbconnections.InsertAuditLog(ctx, adminUser, dbconnections.AuditActionUserPasswordReset, bson.M{
+		"target_username": target,
+		"clear_totp":      clearTotp,
+	}, ""); aerr != nil {
+		log.Printf("admin: audit password reset: %v", aerr)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":       true,
+		"username": target,
+		"clear_totp": clearTotp,
+	})
 }
 
 func (s *Server) handleAPIUserByUsername(w http.ResponseWriter, r *http.Request) {

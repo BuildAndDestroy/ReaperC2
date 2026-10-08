@@ -157,7 +157,7 @@ Open `https://<host>:8443` (or `http://` locally; `/` redirects to **Engagements
 $ ./Scythe Http --method GET --timeout 5s --url http://127.0.0.1:8080 --headers 'Content-Type:application/json,X-Client-Id:550e8400-e29b-41d4-a716-446655440000,X-API-Secret:mysecurekey1' --directories '/heartbeat/550e8400-e29b-41d4-a716-446655440000,/heartbeat'
 ```
 
-With a pivot (parent beacon), the example adds `--proxy <host:port>` (from the form, or `BEACON_PIVOT_PROXY`).
+A pivot is an upstream beacon built with **SOCKS5 listener** (UI default port 9050) and a child whose **Pivot proxy** is that listener’s `host:port`. Parent ClientId alone does not add `-proxy`. See [Initial proxy](docs/operator-guide-beacons.md#initial-proxy-pivot).
 
 * If there is no authenticated user, then no access.
 

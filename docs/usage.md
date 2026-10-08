@@ -49,6 +49,7 @@ Skill text: repository root **`SKILLS.md`** (also used by Cursor agents).
 - Set **Beacon C2 base URL** in the UI (or `BEACON_PUBLIC_BASE_URL`) to the **public** origin beacons use (port **8080** / ingress to beacon API — not `localhost:8443` admin).
 - **Scythe.embedded** requires **Go** on the server host at runtime; sources resolve via `REAPERC2_ROOT/third_party/Scythe` or submodule path next to the binary.
 - Embedded binaries need **`TERM_HARVEST=9`** in the environment before launch (see **Beacons** page in the UI or Operator guide).
+- The first pivot is an upstream beacon with **SOCKS5 listener** checked (no parent). Children set **Parent beacon ClientId** and **Pivot proxy** to that listener’s `host:port`. Steps: [Initial proxy](/documentation/operator-guide-beacons) in the operator guide.
 
 ## Security-related environment variables
 

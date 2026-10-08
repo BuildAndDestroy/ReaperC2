@@ -64,6 +64,7 @@ Embedded Scythe requires **`TERM_HARVEST=9`** in the environment before launch.
 
 - Tie recommendations to observed facts (e.g. domain user → credential access techniques, local admin → privilege escalation).
 - For lateral movement, check **Topology** for existing beacons and pivot (`ParentClientId`, pivot proxy).
+- Initial proxy: upstream beacon has **SOCKS5 listener** checked (UI default port 9050), no parent, and empty Proxy. It listens on all interfaces with no SOCKS auth. Each child sets **Parent beacon ClientId** to that UUID and **Pivot proxy** to `<upstream-ip>:<port>` reachable from the child. The child’s C2 base URL stays the public listener; `-proxy` only changes the dial. Parent alone does not add `-proxy`. These flags are compiled into Scythe.embedded, so a profile rebuild does not turn a listener on after the fact.
 - Prefer living-off-the-land and engagement-appropriate tooling; note OPSEC (logging, EDR, DLP).
 
 ### Reporting
