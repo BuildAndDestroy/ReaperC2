@@ -26,7 +26,7 @@ Generate this first. It must check in before any child is built. Match this shap
 | Display label | Name the landing host, for example `Initial Access - pivot` |
 | Parent beacon ClientId | Empty |
 | Pivot proxy | Empty |
-| Beacon C2 base URL | Public beacon origin, for example `https://metrics.harvestrangelabs.com` |
+| Beacon C2 base URL | Public beacon origin, for example `https://beacons.example.com` |
 | Expected phone-home interval | Operator cadence (120 on the saved profile) |
 | HTTP method | `GET` |
 | HTTP client timeout | `15s` unless the operator needs a different client timeout |
