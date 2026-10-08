@@ -2,9 +2,9 @@
 name: reaper-red-team-operator
 description: >-
   Red team operator workflows for ReaperC2: reconnaissance, enumeration,
-  exploitation planning, beacon commands, MITRE ATT&CK mapping, and engagement
-  scoping. Use when working in the ReaperC2 repo, admin panel, Scythe beacons,
-  or when the user asks for operator tradecraft tied to this C2.
+  exploitation planning, beacon commands, Scythe SOCKS pivots, MITRE ATT&CK
+  mapping, and engagement scoping. Use when working in the ReaperC2 repo, admin
+  panel, Scythe beacons, or when the user asks for operator tradecraft tied to this C2.
 ---
 
 # ReaperC2 red team operator
@@ -13,14 +13,16 @@ Read and follow:
 
 1. **[SKILLS.md](../../../SKILLS.md)** — ReaperC2 platform map, beacon workflow, authorization.
 2. **[red_team_operator_skills.md](red_team_operator_skills.md)** — tradecraft reference (recon, enumeration, cloud, reporting).
-3. **[mitre_attck_skills.md](mitre_attck_skills.md)** — MITRE ATT&CK Enterprise matrix reference (tactics, techniques, sub-techniques).
-4. **[purple-team-operator.md](purple-team-operator.md)** — optional: translate red-team findings into detection rules, hardening, and coverage analysis (purple-team handoff).
+3. **[scythe_proxy_skills.md](scythe_proxy_skills.md)** — exact Generate beacon fields for a Scythe SOCKS pivot (upstream listener, child `-proxy`).
+4. **[mitre_attck_skills.md](mitre_attck_skills.md)** — MITRE ATT&CK Enterprise matrix reference (tactics, techniques, sub-techniques).
+5. **[purple-team-operator.md](purple-team-operator.md)** — optional: translate red-team findings into detection rules, hardening, and coverage analysis (purple-team handoff).
 
 **Operator AI** (`/ai`) merges these from disk when present (`REAPERC2_ROOT`, usually `/root` in Docker). Any other `*_skills.md` in this folder is picked up automatically. Override everything with `REAPER_AI_SKILLS_FILE` for a single custom file.
 
 ## Quick triggers
 
 - **Beacons / Scythe / embedded** → see SKILLS.md “Beacon and command workflow” and `docs/operator-guide-beacons.md`
+- **Proxy / pivot / SOCKS** → `scythe_proxy_skills.md` (Operator AI loads this file automatically)
 - **Queue commands** → `docs/operator-guide-commands.md`; suggest exact strings for `whoami`, `download`, uploads
 - **MITRE / Navigator** → `docs/operator-guide-notes.md`
 - **Engagement scope** → `docs/operator-guide-engagements.md`
