@@ -5,6 +5,8 @@
 
 Interactive **graph** of C2 → beacons (and parent → child when `ParentClientId` is set). Data from `GET /api/topology`.
 
+The edge is the parent UUID stored at generation. Traffic follows that path only when the upstream beacon was built with a **SOCKS5 listener** and the child was built with **Pivot proxy** set to that listener. See [Initial proxy](/documentation/operator-guide-beacons) on the Beacons page.
+
 | Color | Meaning |
 |-------|---------|
 | **Blue** | C2 server node |

@@ -166,6 +166,21 @@ html[data-theme="light"] dialog.eng-manage-dialog::backdrop { background: rgba(3
 dialog.eng-manage-dialog h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
 dialog.eng-manage-dialog textarea { min-height: 10rem; max-width: 100%; }
 dialog.eng-manage-dialog .dlg-actions { margin-top: .75rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+dialog.app-dialog {
+  max-width: 24rem; width: calc(100vw - 2rem);
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text); padding: 1.25rem;
+}
+dialog.app-dialog::backdrop { background: rgba(0,0,0,.55); }
+html[data-theme="light"] dialog.app-dialog::backdrop { background: rgba(31, 26, 18, 0.35); }
+dialog.app-dialog h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+dialog.app-dialog .dlg-actions { margin-top: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+dialog.app-dialog .dlg-check {
+  display: flex; align-items: flex-start; gap: .5rem;
+  margin: .85rem 0 0; font-size: .9rem; line-height: 1.35;
+}
+dialog.app-dialog .dlg-check input { margin-top: .2rem; flex-shrink: 0; }
+dialog.app-dialog .dlg-msg { margin: .65rem 0 0; min-height: 1.2rem; font-size: .85rem; }
 aside .nav-item {
   display: block; padding: .55rem 1rem; color: var(--text); text-decoration: none; border-left: 3px solid transparent;
 }

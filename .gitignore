@@ -20,3 +20,5 @@
 # k3s / OnPrem deploy local config (see deployments/README.md)
 deployments/k3s/config.env
 deployments/config.env
+deployments/k3s/*.local.yaml
+deployments/k8s/**/*.local.yaml

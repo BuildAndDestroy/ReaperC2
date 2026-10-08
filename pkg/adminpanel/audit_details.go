@@ -45,6 +45,7 @@ var preferredAuditDetailKeys = []string{
 	"new_username",
 	"new_role",
 	"target_username",
+	"clear_totp",
 	"operators",
 }
 

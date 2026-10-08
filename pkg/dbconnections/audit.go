@@ -27,9 +27,10 @@ const (
 	AuditActionPasswordChanged         = "password_changed"
 	AuditActionTotpEnabled             = "totp_enabled"
 	AuditActionTotpDisabled            = "totp_disabled"
-	AuditActionUserDisabled              = "user_disabled"
-	AuditActionUserEnabled               = "user_enabled"
-	AuditActionUserRoleUpdated           = "user_role_updated"
+	AuditActionUserDisabled               = "user_disabled"
+	AuditActionUserEnabled                = "user_enabled"
+	AuditActionUserRoleUpdated            = "user_role_updated"
+	AuditActionUserPasswordReset          = "user_password_reset"
 	AuditActionEngagementOperatorsUpdated = "engagement_operators_updated"
 	AuditActionAIChat                     = "ai_chat"
 )

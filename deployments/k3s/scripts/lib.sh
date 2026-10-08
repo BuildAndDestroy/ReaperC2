@@ -33,6 +33,11 @@ load_config() {
   CERT_MANAGER_ISSUER="${CERT_MANAGER_ISSUER:-letsencrypt-prod}"
 }
 
+ingress_tls_secret_name() {
+  local host="${1:-${INGRESS_HOST:-beacons.example.com}}"
+  echo "${host//./-}-tls"
+}
+
 reaperc2_image_ref() {
   echo "${REAPERC2_IMAGE}:${REAPERC2_IMAGE_TAG}"
 }

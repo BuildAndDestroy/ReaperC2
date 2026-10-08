@@ -230,7 +230,10 @@ patch_k3s_ingress_host() {
   local file="$1"
   local host="$2"
   local issuer="$3"
+  local tls_secret
+  tls_secret="$(ingress_tls_secret_name "$host")"
   sed -e "s|beacons\\.example\\.com|${host}|g" \
+      -e "s|beacons-example-com-tls|${tls_secret}|g" \
       -e "s|cert-manager.io/cluster-issuer: .*|cert-manager.io/cluster-issuer: ${issuer}|" \
       "$file"
 }
@@ -263,7 +266,8 @@ apply_k3s_ingress() {
 teardown_k3s_ingress() {
   local k3s_root="$1"
   local ns="${REAPERC2_NAMESPACE:-reaperc2-ns}"
-  local tls_secret="beacons-example-com-tls"
+  local tls_secret
+  tls_secret="$(ingress_tls_secret_name "${INGRESS_HOST:-beacons.example.com}")"
   local ing_name="reaperc2-ingress"
 
   echo "Removing ingress, middlewares, and staging/prod TLS resources..."
