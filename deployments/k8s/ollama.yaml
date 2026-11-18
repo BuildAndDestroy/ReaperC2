@@ -20,7 +20,7 @@ metadata:
   name: ollama-pull-models
   namespace: ollama-ns
 data:
-  # Comma-separated tags pulled on first pod start (empty = skip init pull).
+  # Comma-separated tags pulled at pod start if not already on the volume (empty = skip init pull).
   # Keep in sync with REAPER_AI_OLLAMA_MODELS in operator-ai.yaml when possible.
   OLLAMA_PULL_MODELS: "llama3.2:latest,gpt-oss:latest,deepseek-r1:latest,glm-5.2:cloud"
 ---
@@ -102,9 +102,17 @@ spec:
                 ollama list >/dev/null 2>&1 && break
                 sleep 2
               done
+              # Only pull models missing from the persistent volume. Re-pulling on
+              # every start re-downloads multi-GB blobs whenever a :latest tag moves.
+              # To deliberately update a model:
+              #   kubectl exec -n ollama-ns deploy/ollama -- ollama pull <model>
               for model in $models; do
                 model="$(echo "$model" | xargs)"
                 [ -n "$model" ] || continue
+                if ollama show "$model" >/dev/null 2>&1; then
+                  echo "$model already present; skipping pull"
+                  continue
+                fi
                 echo "Pulling $model..."
                 ollama pull "$model"
               done
