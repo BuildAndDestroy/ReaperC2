@@ -38,14 +38,19 @@ jobs:
   gosec:
     name: gosec
     runs-on: ubuntu-latest
+    # Install via setup-go rather than the securego/gosec Docker action: that
+    # image pins an older Go with GOTOOLCHAIN=local and fails to load packages
+    # when go.mod requires a newer Go (e.g. go 1.26.0 vs image 1.25.1).
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.10
 
       - name: Run gosec
-        uses: securego/gosec@v2.22.10
-        with:
-          args: "-exclude-dir=third_party -severity high -fmt text -stdout -verbose=0 ./..."
+        run: gosec -exclude-dir=third_party -severity high -fmt text -stdout -verbose=0 ./...
